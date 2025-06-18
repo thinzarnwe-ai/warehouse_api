@@ -1,0 +1,33 @@
+{
+    "private": true,
+    "scripts": {
+        "dev": "npm run development",
+        "development": "mix",
+        "watch": "mix watch",
+        "watch-poll": "mix watch -- --watch-options-poll=1000",
+        "hot": "mix watch --hot",
+        "prod": "npm run production",
+        "production": "mix --production"
+    },
+    "devDependencies": {
+        "@tailwindcss/forms": "^0.5.2",
+        "@tailwindcss/typography": "^0.5.0",
+        "alpinejs": "^3.0.6",
+        "autoprefixer": "^10.4.7",
+        "axios": "^1.6.8",
+        "laravel-mix": "^6.0.6",
+        "lodash": "^4.17.19",
+        "postcss": "^8.4.14",
+        "prettier": "3.0.0",
+        "tailwindcss": "^3.4.3"
+    },
+    "dependencies": {
+        "datatables.net-dt": "^2.0.7",
+        "feather-icons": "^4.29.0",
+        "jquery": "^3.7.1",
+        "sweetalert2": "^11.11.0",
+        "tabulator-tables": "^5.5.0",
+        "tailwindcss-neumorphism": "^0.1.0",
+        "xlsx": "^0.18.5"
+    }
+}

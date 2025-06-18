@@ -1,0 +1,8 @@
+@tailwind base;
+
+@tailwind components;
+
+/* @import 'tom-select/dist/css/tom-select.default.css'; */
+
+@tailwind utilities;
+
