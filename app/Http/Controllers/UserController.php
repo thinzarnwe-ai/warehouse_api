@@ -167,7 +167,8 @@ class UserController extends Controller
     public function show($id)
     {
         $user = User::find($id);
-        $branches = UserBranch::where('user_id', $user->id)->with('branches')->get();
+        $branches = UserBranch::where('user_id', $user->id)->with('branch')->get();
+        // dd($branches);
         return view('admins.users.show',compact('user','branches'));
     }
 

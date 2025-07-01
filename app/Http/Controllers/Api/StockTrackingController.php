@@ -60,6 +60,14 @@ class StockTrackingController extends Controller
                 $stock_tracking->save();
             }
 
+            //   return response()->json([
+            //     'success' => true,
+            //     'message' => 'Records saved successfully.',
+            //     'data' => [
+            //       getAuthUser()->id
+           
+            //     ]
+            // ], 201);
             $detail = new StockTrackingRecord();
             $detail->stock_tracking_id = $stock_tracking->id;
             $detail->qty = $request->qty;
@@ -105,18 +113,50 @@ class StockTrackingController extends Controller
 
     public function show(Request $request)
     {
-        $query = StockTracking::with('stockTrackingRecords');
+        $userBranchIds = auth()->user()->user_branches()->pluck('branch_id');
+        $userRole = getAuthUser()->getRoleNames()->first();
+        $query = StockTracking::with('stockTrackingRecords')
+            ->whereIn('from_branch', $userBranchIds)
+            ->where('status', $userRole);
 
-        if ($request->filled('from_date')) {
-            $query->where('created_at', '>=', $request->from_date);
-        }
-
-        if ($request->filled('to_date')) {
-            $query->where('created_at', '<=', Carbon::parse($request->to_date)->endOfDay());
+        if ($request->location_name) {
+            $query->whereRaw('LOWER(location_name) LIKE ?', ['%' . strtolower($request->location_name) . '%']);
         }
 
         if ($request->product_code) {
-            $query->where('product_code', $request->product_code);
+            $query->whereRaw('LOWER(product_code) LIKE ?', ['%' . strtolower($request->product_code) . '%']);
+        }
+
+        $results = $query->latest()->paginate(10);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $results
+        ]);
+    }
+
+    public function showAll(Request $request)
+    {
+        $userBranchIds = auth()->user()->user_branches()->pluck('branch_id');
+        $userRole = getAuthUser()->getRoleNames()->first();
+       
+        $query = StockTrackingRecord::with('stockTracking')
+            ->whereHas('stockTracking', function ($q) use ($userBranchIds,$userRole) {
+                $q->whereIn('from_branch', $userBranchIds)
+                  ->where('status', $userRole);
+            });
+
+       if ($request->product_code && $request->status) {
+            $query->where('status', $request->status)
+                ->whereHas('stockTracking', function ($q) use ($request) {
+                    $q->whereRaw('LOWER(product_code) LIKE ?', ['%' . strtolower($request->product_code) . '%']);
+                });
+        } elseif ($request->product_code) {
+            $query->whereHas('stockTracking', function ($q) use ($request) {
+                $q->whereRaw('LOWER(product_code) LIKE ?', ['%' . strtolower($request->product_code) . '%']);
+            });
+        } elseif ($request->status) {
+            $query->where('status', $request->status);
         }
 
         $results = $query->latest()->paginate(10);
@@ -129,29 +169,36 @@ class StockTrackingController extends Controller
 
     public function stock_in_show(Request $request)
     {
-           $query = StockTrackingRecord::with('stockTracking')
-                ->where('status', 'in');
+        $userBranchIds = auth()->user()->user_branches()->pluck('branch_id');
+        $userRole = getAuthUser()->getRoleNames()->first();
 
-            if ($request->filled('from_date')) {
-                $query->whereDate('created_at', '>=', $request->from_date);
-            }
+        $query = StockTrackingRecord::with('stockTracking')
+            ->where('status', 'in')
+            ->whereHas('stockTracking', function ($q) use ($userBranchIds,$userRole) {
+                $q->whereIn('from_branch', $userBranchIds)
+                ->where('status', $userRole);
+            });
 
-            if ($request->filled('to_date')) {
-                $query->whereDate('created_at', '<=', Carbon::parse($request->to_date)->endOfDay());
-            }
+        if ($request->filled('from_date')) {
+            $query->whereDate('created_at', '>=', $request->from_date);
+        }
 
-            if ($request->product_code) {
-                $query->whereHas('stockTracking', function ($q) use ($request) {
-                    $q->where('product_code', $request->product_code);
-                });
-            }
+        if ($request->filled('to_date')) {
+            $query->whereDate('created_at', '<=', Carbon::parse($request->to_date)->endOfDay());
+        }
 
-            $results = $query->latest()->paginate(10);
+        if ($request->product_code) {
+            $query->whereHas('stockTracking', function ($q) use ($request) {
+                $q->whereRaw('LOWER(product_code) LIKE ?', ['%' . strtolower($request->product_code) . '%']);
+            });
+        }
 
-            return response()->json([
-                'status' => 'success',
-                'data' => $results
-            ]);
+        $results = $query->latest()->paginate(10);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $results
+        ]);
     }
 
     public function statusOutStore(Request $request)
@@ -173,7 +220,7 @@ class StockTrackingController extends Controller
                 ->first();
             if ($stock_tracking) {
                 $stock_tracking->update(['total_qty' => $stock_tracking->total_qty - $request->reduce_qty]);
-            } 
+            }
 
             $detail = new StockTrackingRecord();
             $detail->stock_tracking_id = $stock_tracking->id;
@@ -202,126 +249,187 @@ class StockTrackingController extends Controller
 
 
     public function getStockPcode($pcode, $branch)
-        {
-
-            $stockItem = StockTracking::where('product_code', $pcode)
-                ->where('from_branch', $branch)
-                ->select('product_name', 'location_name', 'total_qty')
-                ->first();
-            if (!$stockItem) {
-                return response()->json(['status' => 'error', 'data' => 'Product Not Found!'], 404);
-            }
-            return response()->json([
-                'status' => 'success',
-                'data' => [
-                    $stockItem,
-                ],
-            ]);
+    {
+        $userRole = getAuthUser()->getRoleNames()->first();
+        $stockItem = StockTracking::where('product_code', $pcode)
+            ->where('from_branch', $branch)
+            ->where('status',$userRole)
+            ->select('product_name', 'location_name', 'total_qty')
+            ->get();
+        if (!$stockItem) {
+            return response()->json(['status' => 'error', 'data' => 'Product Not Found!'], 404);
         }
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                $stockItem,
+            ],
+        ]);
+    }
 
 
     public function stock_out_show(Request $request)
-        {
-            $query = StockTrackingRecord::with('stockTracking')
-                    ->where('status', 'out');
+    {
+        $userBranchIds = auth()->user()->user_branches()->pluck('branch_id');
+        $userRole = getAuthUser()->getRoleNames()->first();
 
-                if ($request->filled('from_date')) {
-                    $query->whereDate('created_at', '>=', $request->from_date);
-                }
+        $query = StockTrackingRecord::with('stockTracking')
+            ->where('status', 'out')
+            ->whereHas('stockTracking', function ($q) use ($userBranchIds,$userRole) {
+                $q->whereIn('from_branch', $userBranchIds)
+                ->where('status', $userRole);
+            });
 
-                if ($request->filled('to_date')) {
-                    $query->whereDate('created_at', '<=', Carbon::parse($request->to_date)->endOfDay());
-                }
 
-                if ($request->product_code) {
-                    $query->whereHas('stockTracking', function ($q) use ($request) {
-                        $q->where('product_code', $request->product_code);
-                    });
-                }
-
-                $results = $query->latest()->paginate(10);
-
-                return response()->json([
-                    'status' => 'success',
-                    'data' => $results
-                ]);
+        if ($request->filled('from_date')) {
+            $query->whereDate('created_at', '>=', $request->from_date);
         }
 
+        if ($request->filled('to_date')) {
+            $query->whereDate('created_at', '<=', Carbon::parse($request->to_date)->endOfDay());
+        }
 
-public function statusTransferStore(Request $request)
+        if ($request->product_code) {
+            $query->whereHas('stockTracking', function ($q) use ($request) {
+                $q->whereRaw('LOWER(product_code) LIKE ?', ['%' . strtolower($request->product_code) . '%']);
+            });
+        }
+
+        $results = $query->latest()->paginate(10);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $results
+        ]);
+    }
+
+
+    public function statusTransferStore(Request $request)
     {
-        // return response()->json(['message'=>'hello world']);
         $request->validate([
             'location_name' => 'required',
             'product_code' => 'required',
             'product_name' => 'required',
             'qty' => 'required',
-            'transfer_qty' => 'required',
+            'transfer_qty' => 'required|numeric|min:1',
             'remark' => 'required',
             'transfer_location' => 'required',
+            'from_branch' => 'required',
         ]);
 
         try {
-            $stock_tracking = StockTracking::where('from_branch', $request->from_branch)
-                ->where('location_name', $request->location_name)
-                ->where('product_code', $request->product_code)
-                ->first();
-            // if ($stock_tracking) {
-            //     $stock_tracking->update(['total_qty' => $stock_tracking->total_qty - $request->reduce_qty]);
-            // } 
+            $authUserId = getAuthUser()->id;
+            $fromBranch = $request->from_branch;
+            $productCode = $request->product_code;
+            $transferQty = $request->transfer_qty;
+            $locationName = $request->location_name;
+            $transferLocation = $request->transfer_location;
 
-            $detail = new StockTrackingRecord();
-            $detail->stock_tracking_id = $stock_tracking->id;
-            $detail->qty = $request->transfer_qty;
-            $detail->status = 'transfer';
-            $detail->user_id = getAuthUser()->id;
-            $detail->remark = $request->remark;
-            $detail->transfer_location = $request->transfer_location;
-            $detail->save();
+            // 1. Reduce stock from original location
+            $stockFrom = StockTracking::where('from_branch', $fromBranch)
+                ->where('location_name', $locationName)
+                ->where('product_code', $productCode)
+                ->first();
+
+            if (!$stockFrom) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Original stock record not found.',
+                ], 404);
+            }
+
+            $stockFrom->decrement('total_qty', $transferQty);
+
+            $inRecord = new StockTrackingRecord([
+                'stock_tracking_id' => $stockFrom->id,
+                'qty' => $transferQty,
+                'status' => 'Transfer In',
+                'user_id' => $authUserId,
+                'remark' => $request->remark,
+                'transfer_location' => $transferLocation,
+            ]);
+
+            $inRecord->save();
+
+            // 2. Increase or create stock at transfer location
+            $stockTo = StockTracking::where('from_branch', $fromBranch)
+                ->where('location_name', $transferLocation)
+                ->where('product_code', $productCode)
+                ->first();
+
+            if ($stockTo) {
+                $stockTo->increment('total_qty', $transferQty);
+            } else {
+                $stockTo = StockTracking::create([
+                    'location_name' => $transferLocation,
+                    'from_branch' => $fromBranch,
+                    'product_code' => $productCode,
+                    'product_name' => $request->product_name,
+                    'total_qty' => $transferQty,
+                ]);
+            }
+
+            $outRecord = new StockTrackingRecord([
+                'stock_tracking_id' => $stockTo->id,
+                'qty' => $transferQty,
+                'status' => 'Transfer Out',
+                'user_id' => $authUserId,
+                'remark' => $request->remark,
+                'transfer_location' => $locationName,
+            ]);
+            $outRecord->save();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Records saved successfully.',
+                'message' => 'Stock transfer completed successfully.',
                 'data' => [
-                    // 'stock_tracking' => $stock_tracking,
-                    'detail' => $detail
+                    'in_record' => $inRecord,
+                    'out_record' => $outRecord,
                 ]
             ], 201);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Something went wrong',
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
             ], 500);
         }
     }
 
 
-        public function stock_transfer_show(Request $request)
-        {
-            $query = StockTrackingRecord::with('stockTracking')
-                    ->where('status', 'transfer');
 
-                if ($request->filled('from_date')) {
-                    $query->whereDate('created_at', '>=', $request->from_date);
-                }
+    public function stock_transfer_show(Request $request)
+    {
 
-                if ($request->filled('to_date')) {
-                    $query->whereDate('created_at', '<=', Carbon::parse($request->to_date)->endOfDay());
-                }
+        $userBranchIds = auth()->user()->user_branches()->pluck('branch_id');
+        $userRole = getAuthUser()->getRoleNames()->first();
+        $query = StockTrackingRecord::with('stockTracking')
+            ->whereIn('status',  ['Transfer In', 'Transfer Out'])
+            ->whereHas('stockTracking', function ($q) use ($userBranchIds,$userRole) {
+                $q->whereIn('from_branch', $userBranchIds)
+                ->where('status', $userRole);
+            });
 
-                if ($request->product_code) {
-                    $query->whereHas('stockTracking', function ($q) use ($request) {
-                        $q->where('product_code', $request->product_code);
-                    });
-                }
 
-                $results = $query->latest()->paginate(5);
-
-                return response()->json([
-                    'status' => 'success',
-                    'data' => $results
-                ]);
+        if ($request->filled('from_date')) {
+            $query->whereDate('created_at', '>=', $request->from_date);
         }
 
+        if ($request->filled('to_date')) {
+            $query->whereDate('created_at', '<=', Carbon::parse($request->to_date)->endOfDay());
+        }
+
+        if ($request->product_code) {
+            $query->whereHas('stockTracking', function ($q) use ($request) {
+                $q->whereRaw('LOWER(product_code) LIKE ?', ['%' . strtolower($request->product_code) . '%']);
+            });
+        }
+
+        $results = $query->latest()->paginate(5);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $results
+        ]);
+    }
 }

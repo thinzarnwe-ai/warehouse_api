@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 class StockTrackingRecord extends Model
 {
     use HasFactory;
-    protected $fillable = ['status','qty','user_id','remark','transfer_location'];
+    protected $fillable = ['stock_tracking_id','status','qty','user_id','remark','transfer_location'];
 
    public function stockTracking()
     {

@@ -39,6 +39,7 @@ Route::middleware(['auth:sanctum'])->group(function (){
     Route::post('location',[LocationController::class, 'store']);
     Route::get('location',[LocationController::class, 'index']);
     Route::get('stock_active',[StockTrackingController::class, 'show']);
+    Route::get('show_all_stock',[StockTrackingController::class, 'showAll']);
     Route::get('locations',[LocationController::class,'showAll']);
     Route::post('stock_tracking_in',[StockTrackingController::class, 'store']);
     Route::get('stock_tracking_in',[StockTrackingController::class, 'stock_in_show']);

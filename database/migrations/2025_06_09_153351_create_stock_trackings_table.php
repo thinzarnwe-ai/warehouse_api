@@ -20,6 +20,7 @@ class CreateStockTrackingsTable extends Migration
             $table->string('product_name');
             $table->integer('total_qty');
             $table->integer('from_branch');
+            $table->string('status');
             $table->timestamps();
         });
     }

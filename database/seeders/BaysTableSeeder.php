@@ -16,10 +16,10 @@ class BaysTableSeeder extends Seeder
     {
         $rows = [];
 
-        for ($i = 1; $i <= 100; $i++) {
+        for ($i = 1; $i < 100; $i++) {
             $rows[] = [
                 'id' => $i,
-                'name' => str_pad($i, 3, '0', STR_PAD_LEFT),
+                'name' => str_pad($i, 2, '0', STR_PAD_LEFT),
             ];
         }
 

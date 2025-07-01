@@ -20,7 +20,7 @@ class CreateStockTrackingRecordsTable extends Migration
             $table->integer('qty');
             $table->integer('user_id');
             $table->text('remark');
-            $table->string('transfer_location');
+            $table->string('transfer_location')->nullable();
             $table->timestamps();
         });
     }

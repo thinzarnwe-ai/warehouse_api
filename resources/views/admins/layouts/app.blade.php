@@ -160,27 +160,15 @@
     </div>
   </div>
 
-  <script src="https://code.jquery.com/jquery-3.6.0.js"></script>
+  <script src="{{asset('js/jquery-3.6.0.js')}}"></script>
 
-  <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js" type="text/javascript"></script>
-  <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-beta.1/dist/js/select2.min.js"></script> 
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
+  <script src="{{asset('js/jquery.dataTables.min.js')}}" type="text/javascript"></script>
+  <script src="{{asset('js/select2.min.js')}}"></script> 
+  <script src="{{asset('js/3.4.16')}}"></script>
+  <script src="{{asset('js/tom-select.complete.min.js')}}"></script>
   <script src="{{ asset('js/app.js') }}"></script>
-  <link
-  rel="stylesheet"
-  href="https://cdnjs.cloudflare.com/ajax/libs/selectize.js/0.15.2/css/selectize.default.min.css"
-  integrity="sha512-pTaEn+6gF1IeWv3W1+7X7eM60TFu/agjgoHmYhAfLEU8Phuf6JKiiE8YmsNC0aCgQv4192s4Vai8YZ6VNM6vyQ=="
-  crossorigin="anonymous"
-  referrerpolicy="no-referrer"
-/>
-<script
-  src="https://cdnjs.cloudflare.com/ajax/libs/selectize.js/0.15.2/js/selectize.min.js"
-  integrity="sha512-IOebNkvA/HZjMM7MxL0NYeLYEalloZ8ckak+NDtOViP7oiYzG5vn6WVXyrJDiJPhl4yRdmNAG49iuLmhkUdVsQ=="
-  crossorigin="anonymous"
-  referrerpolicy="no-referrer"
-></script>
-<script src="//cdn.jsdelivr.net/npm/sweetalert2@10"></script>
+ 
+<script src="{{asset('js/sweetalert2@10.js')}}"></script>
 @stack('addon-script')
 <script>
     function closeModal(modal)

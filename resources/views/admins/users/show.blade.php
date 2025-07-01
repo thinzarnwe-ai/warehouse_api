@@ -38,6 +38,7 @@
                                     <td scope="col" class=" py-2 pr-3 text-left text-sm ">Role</td>
                                     {{-- <th scope="col" class=" py-2 pl-4 pr-3 text-left text-sm font-semibold sm:pl-6 lg:pl-8">{{ $user }}
                                     </th> --}}
+                                    {{-- @dd($user->getRoleNames()) --}}
                                     <th scope="col" class=" py-2 pl-4 pr-3 text-left text-sm font-semibold sm:pl-6 lg:pl-8">
                                                                         <button class="bg-[#1a936f] py-0.5 px-1 m-1 cursor-text font-semibold rounded text-white"> @if(!empty($user->getRoleNames()))
                                     @foreach($user->getRoleNames() as $v)
@@ -51,7 +52,7 @@
                                     <td scope="col" class=" py-2 pr-3 text-left text-sm ">Branch</td>
                                     <th scope="col" class=" py-2 pl-4 pr-3 text-left text-sm font-semibold sm:pl-6 lg:pl-8">
                                          @foreach ($branches as $branch)
-                                    {{ $branch->branches->branch_name}},
+                                    {{ $branch->branch->branch_name}},
                                     @endforeach                     </th>
                                 </tr>
                                 <tr>
