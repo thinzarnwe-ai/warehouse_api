@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use App\Models\StockTracking;
 use Illuminate\Support\Facades\DB;
 use App\Models\StockTrackingRecord;
+use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
 
 class StockTrackingController extends Controller
@@ -306,6 +307,7 @@ class StockTrackingController extends Controller
 
     public function statusTransferStore(Request $request)
     {
+        Log::info(['request'=>$request->all()]);
         $request->validate([
             'location_name' => 'required',
             'product_code' => 'required',
@@ -350,25 +352,31 @@ class StockTrackingController extends Controller
             ]);
 
             $inRecord->save();
-
+             Log::info(['stockTo not null'=>$inRecord]);
             // 2. Increase or create stock at transfer location
             $stockTo = StockTracking::where('from_branch', $fromBranch)
                 ->where('location_name', $transferLocation)
                 ->where('product_code', $productCode)
                 ->first();
-
-            if ($stockTo) {
+           
+            if ($stockTo != null) {
+               
                 $stockTo->increment('total_qty', $transferQty);
             } else {
+                
+                $userRole = getAuthUser()->getRoleNames()->first();
                 $stockTo = StockTracking::create([
                     'location_name' => $transferLocation,
                     'from_branch' => $fromBranch,
                     'product_code' => $productCode,
                     'product_name' => $request->product_name,
                     'total_qty' => $transferQty,
+                    'status' => $userRole,
                 ]);
+               
             }
-
+            Log::info(['not work'=>$stockTo]);
+        //    Log::info($stockTo);
             $outRecord = new StockTrackingRecord([
                 'stock_tracking_id' => $stockTo->id,
                 'qty' => $transferQty,
