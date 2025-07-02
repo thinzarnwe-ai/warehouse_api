@@ -433,7 +433,7 @@ class StockTrackingController extends Controller
             });
         }
 
-        $results = $query->latest()->paginate(5);
+        $results = $query->latest()->paginate(10);
 
         return response()->json([
             'status' => 'success',
