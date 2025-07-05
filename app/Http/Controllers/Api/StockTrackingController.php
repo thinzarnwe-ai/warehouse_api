@@ -52,23 +52,18 @@ class StockTrackingController extends Controller
             if ($stock_tracking) {
                 $stock_tracking->update(['total_qty' => $stock_tracking->total_qty + $request->qty]);
             } else {
+                $userRole = getAuthUser()->getRoleNames()->first();
                 $stock_tracking = new StockTracking();
                 $stock_tracking->product_code = $request->product_code;
                 $stock_tracking->product_name = $request->product_name;
                 $stock_tracking->location_name = $request->location_name;
                 $stock_tracking->total_qty = $request->qty;
                 $stock_tracking->from_branch = $request->from_branch;
+                $stock_tracking->status = $userRole;
                 $stock_tracking->save();
             }
 
-            //   return response()->json([
-            //     'success' => true,
-            //     'message' => 'Records saved successfully.',
-            //     'data' => [
-            //       getAuthUser()->id
-           
-            //     ]
-            // ], 201);
+            
             $detail = new StockTrackingRecord();
             $detail->stock_tracking_id = $stock_tracking->id;
             $detail->qty = $request->qty;
