@@ -65,7 +65,7 @@ public function index()
     ]);
 
     if ($validate->fails()) {
-        return response()->json(['status' => 'error', 'data' => $validate->errors()]);
+        return response()->json(['status' => 'error', 'message' => $validate->errors()]);
     }
 
     // Fetch name parts
@@ -75,7 +75,6 @@ public function index()
     $bay = Bay::findOrFail($request->bay_id);
     $level = Level::findOrFail($request->level_id);
 
-// return response()->json(getAuthUser()->getRoleNames()->contains('Sale'));
     // Create location name
     if(getAuthUser()->getRoleNames()->contains('Sale')){
 
@@ -84,25 +83,29 @@ public function index()
         $locationName = "{$branch->branch_short_name}W_{$zone->name}_{$row->name}_{$bay->name}_{$level->name}";
     }
 
+    if (Location::where('location_name', $locationName)->exists()) {
+    return response()->json([
+        'status' => 'error',
+        'message' => 'This location already exists.'
+    ], 409); 
+}
     // Save only location_name
     $location = new Location();
     $location->location_name = $locationName;
     $location->branch_id = $request->branch_id;
     $location->save();
 
-    return response()->json(['status' => 'success', 'data' => 'Location successfully saved!']);
+    return response()->json(['status' => 'success', 'message' => 'Location successfully saved!']);
     }
 
 
-  public function showAll(Request $request)
+public function showAll(Request $request) 
 {
-    // Get the current user's branch access
     $userBranchIds = auth()->user()->user_branches()->pluck('branch_id');
+    $roles = getAuthUser()->getRoleNames();
 
-    // Start the base query
     $query = Location::whereIn('branch_id', $userBranchIds);
 
-    // Optional filters
     if ($request->filled('zone')) {
         $zone = strtoupper($request->zone);
         $query->whereRaw("(string_to_array(location_name, '_'))[2] = ?", [$zone]);
@@ -112,35 +115,24 @@ public function index()
         $query->whereRaw("(string_to_array(location_name, '_'))[3] = ?", [$request->row]);
     }
 
-    // Get locations
-    $locations = $query->orderBy('created_at', 'desc')->get();
+    // Role-based filter (prefix ending in S or W)
+    if ($roles->contains('Sale')) {
+        $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'S'");
+    } elseif ($roles->contains('Warehouse')) {
+        $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'W'");
+    } else {
+        // If role doesn't match, return empty
+        return response()->json([
+            'status' => 'success',
+            'data' => [],
+        ]);
+    }
 
-    // Get user role
-    $roles = getAuthUser()->getRoleNames();
-
-    // Filter locations based on sign (last character of first part of location_name)
-    $filtered = $locations->filter(function ($location) use ($roles) {
-        $parts = explode('_', $location->location_name);
-
-        if (count($parts) < 1) return false;
-
-        $prefix = $parts[0];
-        $lastChar = substr($prefix, -1); // safe way to get last char in PHP
-
-        if ($roles->contains('Sale')) {
-            return $lastChar === 'S'; // LANS
-        }
-
-        if ($roles->contains('Warehouse')) {
-            return $lastChar === 'W'; // LANW
-        }
-
-        return false; // No role match
-    });
+    $locations = $query->orderBy('created_at', 'desc')->paginate(10);
 
     return response()->json([
         'status' => 'success',
-         'data' => $filtered->all()
+        'data' => $locations
     ]);
 }
 

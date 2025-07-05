@@ -118,7 +118,8 @@ class StockTrackingController extends Controller
         $userRole = getAuthUser()->getRoleNames()->first();
         $query = StockTracking::with('stockTrackingRecords')
             ->whereIn('from_branch', $userBranchIds)
-            ->where('status', $userRole);
+            ->where('status', $userRole)
+            ->where('total_qty', '!=', 0);
 
         if ($request->location_name) {
             $query->whereRaw('LOWER(location_name) LIKE ?', ['%' . strtolower($request->location_name) . '%']);
@@ -252,11 +253,13 @@ class StockTrackingController extends Controller
     public function getStockPcode($pcode, $branch)
     {
         $userRole = getAuthUser()->getRoleNames()->first();
-        $stockItem = StockTracking::where('product_code', $pcode)
-            ->where('from_branch', $branch)
-            ->where('status',$userRole)
-            ->select('product_name', 'location_name', 'total_qty')
-            ->get();
+       $stockItem = StockTracking::where('product_code', $pcode)
+        ->where('total_qty', '!=', 0)
+        ->where('from_branch', $branch)
+        ->where('status', $userRole)
+        ->select('product_name', 'location_name', 'total_qty')
+        ->get();
+
         if (!$stockItem) {
             return response()->json(['status' => 'error', 'data' => 'Product Not Found!'], 404);
         }
