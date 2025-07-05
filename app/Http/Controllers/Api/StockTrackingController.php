@@ -124,7 +124,7 @@ class StockTrackingController extends Controller
             $query->whereRaw('LOWER(product_code) LIKE ?', ['%' . strtolower($request->product_code) . '%']);
         }
 
-        $results = $query->latest()->paginate(10);
+        $results = $query->orderBy('updated_at', 'desc')->paginate(10);
 
         return response()->json([
             'status' => 'success',
