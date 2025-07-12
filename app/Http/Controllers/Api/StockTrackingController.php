@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use Carbon\Carbon;
+use App\Models\Location;
 use App\Models\UserBranch;
 use Illuminate\Http\Request;
 use App\Models\StockTracking;
@@ -34,60 +35,76 @@ class StockTrackingController extends Controller
 
         ]);
     }
-    public function store(Request $request)
-    {
-        $request->validate([
-            'location_name' => 'required',
-            'product_code' => 'required',
-            'product_name' => 'required',
-            'qty' => 'required',
-            'remark' => 'required',
+  public function store(Request $request)
+{
+    $request->validate([
+        'location_name' => 'required',
+        'product_code' => 'required',
+        'product_name' => 'required',
+        'qty' => 'required|numeric|min:1',
+        'remark' => 'required',
+        'from_branch' => 'required',
+    ]);
+
+    try {
+ 
+        $locationExists = Location::where('location_name', $request->location_name)->exists();
+
+        if (!$locationExists) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'သတ်မှတ်ထားသော Location Name မရှိသေးပါ သဖြင့် Location Name သတ်မှတ်ပေးပါရန်လိုအပ်ပါသည်',
+                'data' => [],
+            ], 404);
+        }
+
+    
+        $stockTracking = StockTracking::where('from_branch', $request->from_branch)
+            ->where('location_name', $request->location_name)
+            ->where('product_code', $request->product_code)
+            ->first();
+
+        if ($stockTracking) {
+            $stockTracking->increment('total_qty', $request->qty);
+        } else {
+            $userRole = getAuthUser()->getRoleNames()->first();
+
+            $stockTracking = StockTracking::create([
+                'product_code'  => $request->product_code,
+                'product_name'  => $request->product_name,
+                'location_name' => $request->location_name,
+                'total_qty'     => $request->qty,
+                'from_branch'   => $request->from_branch,
+                'status'        => $userRole,
+            ]);
+        }
+
+        $detail = StockTrackingRecord::create([
+            'stock_tracking_id' => $stockTracking->id,
+            'qty'               => $request->qty,
+            'status'            => 'in',
+            'user_id'           => getAuthUser()->id,
+            'remark'            => $request->remark,
         ]);
 
-        try {
-            $stock_tracking = StockTracking::where('from_branch', $request->from_branch)
-                ->where('location_name', $request->location_name)
-                ->where('product_code', $request->product_code)
-                ->first();
-            if ($stock_tracking) {
-                $stock_tracking->update(['total_qty' => $stock_tracking->total_qty + $request->qty]);
-            } else {
-                $userRole = getAuthUser()->getRoleNames()->first();
-                $stock_tracking = new StockTracking();
-                $stock_tracking->product_code = $request->product_code;
-                $stock_tracking->product_name = $request->product_name;
-                $stock_tracking->location_name = $request->location_name;
-                $stock_tracking->total_qty = $request->qty;
-                $stock_tracking->from_branch = $request->from_branch;
-                $stock_tracking->status = $userRole;
-                $stock_tracking->save();
-            }
+        return response()->json([
+            'success' => true,
+            'message' => 'Records saved successfully.',
+            'data' => [
+                'stock_tracking' => $stockTracking,
+                'detail' => $detail
+            ]
+        ], 201);
 
-            
-            $detail = new StockTrackingRecord();
-            $detail->stock_tracking_id = $stock_tracking->id;
-            $detail->qty = $request->qty;
-            $detail->status = 'in';
-            $detail->user_id = getAuthUser()->id;
-            $detail->remark = $request->remark;
-            $detail->save();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Records saved successfully.',
-                'data' => [
-                    'stock_tracking' => $stock_tracking,
-                    'detail' => $detail
-                ]
-            ], 201);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Something went wrong',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Something went wrong.',
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
+
 
     public function getPcode($pcode)
     {
@@ -107,6 +124,27 @@ class StockTrackingController extends Controller
         ]);
     }
 
+ public function getPname($pname)
+{
+    $productName = DB::connection('pg_master')
+        ->table('master_data.master_product')
+        ->select('product_code', 'product_name1')
+        ->where('product_name1', 'ILIKE', '%' . $pname . '%') 
+        ->limit(10)
+        ->get();
+
+        
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'product_name' => $productName,
+            ]
+
+        ]);
+}
+
+    
+
     public function show(Request $request)
     {
         $userBranchIds = auth()->user()->user_branches()->pluck('branch_id');
@@ -120,8 +158,17 @@ class StockTrackingController extends Controller
             $query->whereRaw('LOWER(location_name) LIKE ?', ['%' . strtolower($request->location_name) . '%']);
         }
 
-        if ($request->product_code) {
-            $query->whereRaw('LOWER(product_code) LIKE ?', ['%' . strtolower($request->product_code) . '%']);
+        // if ($request->product_code) {
+        //     $query->whereRaw('LOWER(product_code) LIKE ?', ['%' . strtolower($request->product_code) . '%']);
+        // }
+
+        if ($request->product_keyword) {
+            $keyword = strtolower($request->product_keyword);
+
+            $query->where(function ($q) use ($keyword) {
+                $q->whereRaw('LOWER(product_code) LIKE ?', ["%{$keyword}%"])
+                ->orWhereRaw('LOWER(product_name) LIKE ?', ["%{$keyword}%"]);
+            });
         }
 
         $results = $query->orderBy('updated_at', 'desc')->paginate(10);
@@ -211,6 +258,14 @@ class StockTrackingController extends Controller
         ]);
 
         try {
+
+                if ($request->qty < $request->reduce_qty) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Stock တွင် ရှိနေသော total qty ထက်ပိုထုပ်ရျ်မရပါ',
+                        'data' => [],
+                    ], 404);
+                }
             $stock_tracking = StockTracking::where('from_branch', $request->from_branch)
                 ->where('location_name', $request->location_name)
                 ->where('product_code', $request->product_code)
@@ -245,26 +300,68 @@ class StockTrackingController extends Controller
     }
 
 
-    public function getStockPcode($pcode, $branch)
-    {
-        $userRole = getAuthUser()->getRoleNames()->first();
-       $stockItem = StockTracking::where('product_code', $pcode)
+ public function getStockPcode($pcode, $branch)
+{
+    $userRole = getAuthUser()->getRoleNames()->first();
+
+    $stockItem = StockTracking::where('product_code', $pcode)
         ->where('total_qty', '!=', 0)
         ->where('from_branch', $branch)
         ->where('status', $userRole)
         ->select('product_name', 'location_name', 'total_qty')
+        ->orderBy('updated_at', 'desc')
         ->get();
 
-        if (!$stockItem) {
-            return response()->json(['status' => 'error', 'data' => 'Product Not Found!'], 404);
-        }
+
+    if ($stockItem->isEmpty()) {
         return response()->json([
+            'status' => 'error',
+            'message' => 'Product Not Found!',
+            'data' => [],
+        ], 404);
+    }
+
+    return response()->json([
+        'status' => 'success',
+        'data' => $stockItem, 
+    ]);
+}
+
+
+public function getStockPname($pname, $branch)
+{
+    $userRole = getAuthUser()->getRoleNames()->first();
+
+   $stockItem = DB::table('stock_trackings')
+    ->selectRaw('DISTINCT ON (product_name) product_name, product_code, total_qty, location_name')
+    ->where('product_name', 'ILIKE', '%' . $pname . '%')
+    ->where('total_qty', '!=', 0)
+    ->where('from_branch', $branch)
+    ->where('status', $userRole)
+    ->orderBy('product_name')         
+    ->orderBy('created_at', 'asc')            
+    ->limit(10)
+    ->get();
+
+        
+
+    if ($stockItem->isEmpty()) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Product Not Found!',
+            'data' => [],
+        ], 404);
+    }
+
+      return response()->json([
             'status' => 'success',
             'data' => [
-                $stockItem,
-            ],
+                'product_name' => $stockItem,
+            ]
+
         ]);
-    }
+}
+
 
 
     public function stock_out_show(Request $request)
