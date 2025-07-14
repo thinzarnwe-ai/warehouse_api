@@ -130,6 +130,7 @@ class StockTrackingController extends Controller
         ->table('master_data.master_product')
         ->select('product_code', 'product_name1')
         ->where('product_name1', 'ILIKE', '%' . $pname . '%') 
+        ->where('inactive_po','A')
         ->limit(10)
         ->get();
 
