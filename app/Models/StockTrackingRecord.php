@@ -15,4 +15,9 @@ class StockTrackingRecord extends Model
         return $this->belongsTo(StockTracking::class, 'stock_tracking_id');
     }
 
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
 }

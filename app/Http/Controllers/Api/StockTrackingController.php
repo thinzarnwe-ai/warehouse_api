@@ -159,10 +159,6 @@ class StockTrackingController extends Controller
             $query->whereRaw('LOWER(location_name) LIKE ?', ['%' . strtolower($request->location_name) . '%']);
         }
 
-        // if ($request->product_code) {
-        //     $query->whereRaw('LOWER(product_code) LIKE ?', ['%' . strtolower($request->product_code) . '%']);
-        // }
-
         if ($request->product_keyword) {
             $keyword = strtolower($request->product_keyword);
 
@@ -209,6 +205,46 @@ class StockTrackingController extends Controller
         return response()->json([
             'status' => 'success',
             'data' => $results
+        ]);
+    }
+
+    public function detail($id){
+
+        $query = StockTrackingRecord::with('stockTracking','user')
+                ->where('id', $id)
+                ->get();
+
+        if ($query->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Product Not Found!',
+                'data' => [],
+            ], 404);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $query, 
+        ]);
+    }
+
+    public function stockDetail($id){
+
+        $query = StockTracking::with('stockTrackingRecords')
+                ->where('id', $id)
+                ->get();
+
+        if ($query->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Product Not Found!',
+                'data' => [],
+            ], 404);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $query, 
         ]);
     }
 

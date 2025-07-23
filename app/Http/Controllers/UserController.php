@@ -73,37 +73,6 @@ class UserController extends Controller
         return redirect('login');
     }
 
-    // public function index(Request $request)
-    // {
-    //     getRequiredData();
-    //     $role                   = Session::get('role');
-    //     $emp_id                 = Session::get('emp_id');
-    //     $branch_id              = Session::get('branch_id');
-    //     $category_id            = Session::get('category_id');
-
-
-    //     $users                  = $this->search_query($role,$emp_id,$branch_id,$category_id);
-    //     // $users                  = User::with('departments','positions','roles','user_branches')->latest()->paginate(10);
-    //     $departments            = Department::all();
-    //     $categories             = ProductCategory::all();
-    //     $positions              = Position::all();
-    //     $branches               = Branch::all();
-    //     $roles                  = Role::all();
-
-    //     if($request->ajax()){
-
-    //         return response()->json([
-    //             'success'               => true,
-    //             'users'                 => $users,
-    //             'departments'           => $departments,
-    //             'categories'            => $categories,
-    //             'positions'             => $positions,
-    //             'branches'              => $branches,
-    //             'roles'                 => $roles,
-    //            ]);
-    //     }
-    //     return view('admins.users.index',compact('users','departments','categories','positions','branches','roles'));
-    // }
 
     public function index()
     {

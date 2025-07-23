@@ -52,9 +52,6 @@ Route::middleware(['auth:sanctum'])->group(function (){
     Route::get('stock_tracking_out', [StockTrackingController::class,'stock_out_show']);
     Route::post('stock_tracking_transfer',[StockTrackingController::class,'statusTransferStore']);
     Route::get('stock_tracking_transfer',[StockTrackingController::class, 'stock_transfer_show']);
+    Route::get('detail/{id}',[StockTrackingController::class, 'detail']);
+     Route::get('stock_detail/{id}',[StockTrackingController::class, 'stockDetail']);
 });
-
-
-
-
-// Route::post('/store-document', [DocumentController::class, 'store']);

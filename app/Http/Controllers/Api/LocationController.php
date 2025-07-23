@@ -115,6 +115,10 @@ public function showAll(Request $request)
         $query->whereRaw("(string_to_array(location_name, '_'))[3] = ?", [$request->row]);
     }
 
+     if ($request->filled('bay')) {
+        $query->whereRaw("(string_to_array(location_name, '_'))[4] = ?", [$request->bay]);
+    }
+
     // Role-based filter (prefix ending in S or W)
     if ($roles->contains('Sale')) {
         $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'S'");
@@ -128,7 +132,7 @@ public function showAll(Request $request)
         ]);
     }
 
-    $locations = $query->orderBy('created_at', 'desc')->paginate(10);
+    $locations = $query->orderBy('created_at', 'desc')->paginate(20);
 
     return response()->json([
         'status' => 'success',
