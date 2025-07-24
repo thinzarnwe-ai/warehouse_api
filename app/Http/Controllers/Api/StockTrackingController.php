@@ -452,6 +452,14 @@ public function getStockPname($pname, $branch)
         ]);
 
         try {
+            
+                if ($request->qty < $request->transfer_qty) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Stock တွင် ရှိနေသော total qty ထက်ပိုထုပ်ရျ်မရပါ',
+                        'data' => [],
+                    ], 404);
+                }
             $authUserId = getAuthUser()->id;
             $fromBranch = $request->from_branch;
             $productCode = $request->product_code;
