@@ -31,11 +31,10 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     ]);
 });
 Route::post('/login', [AuthController::class, 'login']);
-// Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
-
 
 Route::middleware(['auth:sanctum'])->group(function (){
     Route::post('logout',[AuthController::class,'logout']);
+    Route::put('user/branch',[AuthController::class, 'updateBranch']);
     Route::post('location',[LocationController::class, 'store']);
     Route::get('location',[LocationController::class, 'index']);
     Route::get('stock_active',[StockTrackingController::class, 'show']);
@@ -53,5 +52,7 @@ Route::middleware(['auth:sanctum'])->group(function (){
     Route::post('stock_tracking_transfer',[StockTrackingController::class,'statusTransferStore']);
     Route::get('stock_tracking_transfer',[StockTrackingController::class, 'stock_transfer_show']);
     Route::get('detail/{id}',[StockTrackingController::class, 'detail']);
-     Route::get('stock_detail/{id}',[StockTrackingController::class, 'stockDetail']);
+    Route::get('stock_detail/{id}',[StockTrackingController::class, 'stockDetail']);
+    Route::delete('/deleteStockIn/{id}',[StockTrackingController::class, 'destoryStockIn']);
+    Route::delete('/deleteStockOut/{id}',[StockTrackingController::class, 'destoryStockOut']);
 });

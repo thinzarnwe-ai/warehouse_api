@@ -103,11 +103,12 @@ class UserController extends Controller
                 $input = $request->all();
                 // dd($input);
                 $input['password'] = Hash::make($input['password']);
-                unset($input['branch_id']);
+                $input['branch_id'] = $request->branch_id[0];
+                // unset($input['branch_id']);
                 $user = User::create($input);
                 $user_id = $user->id;
                 $branch_ids = $request->branch_id;
-                // dd($branch_ids);
+                
                 foreach ($branch_ids as $branch_id) {
                     $userBranch['user_id'] = $user_id;
                     $userBranch['branch_id'] = $branch_id;
@@ -137,7 +138,7 @@ class UserController extends Controller
     {
         $user = User::find($id);
         $branches = UserBranch::where('user_id', $user->id)->with('branch')->get();
-        // dd($branches);
+        // dd(getAuthUser()->branch_id);
         return view('admins.users.show',compact('user','branches'));
     }
 
@@ -164,14 +165,23 @@ class UserController extends Controller
             } else {
                 $input = Arr::except($input, array('password'));
             }
-            unset($input['branch_id']);
+            // unset($input['branch_id']);
             $user = User::find($id);
+            $input['branch_id'] = $request->branch_id[0];
             $user->update($input);
             DB::table('model_has_roles')->where('model_id', $id)->delete();
             $user_id = $user->id;
             DB::table('user_branches')->where('user_id', $user_id)->delete();
             $branch_ids = $request->branch_id;
-            $user->assignRole($request->input('roles'));
+             $role = Role::find($request->input('role_id'));
+            // dd($role);
+            if (!$role) {
+                DB::rollBack();
+                return response()->json(['error' => 'Role not found.'], 404);
+            }
+
+            $user->assignRole($role->id);
+            // $user->assignRole($request->input('role_id'));
             foreach ($branch_ids as $branch_id) {
                 $userBranch['user_id'] = $user_id;
                 $userBranch['branch_id'] = $branch_id;

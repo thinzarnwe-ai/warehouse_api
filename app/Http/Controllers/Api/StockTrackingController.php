@@ -148,11 +148,11 @@ class StockTrackingController extends Controller
 
     public function show(Request $request)
     {
-        $userBranchIds = auth()->user()->user_branches()->pluck('branch_id');
-        $userRole = getAuthUser()->getRoleNames()->first();
+        $userBranchId = getAuthUser()->branch_id; 
+        // $userRole = getAuthUser()->getRoleNames()->first();
         $query = StockTracking::with('stockTrackingRecords')
-            ->whereIn('from_branch', $userBranchIds)
-            ->where('status', $userRole)
+            ->where('from_branch', $userBranchId)
+            // ->where('status', $userRole)
             ->where('total_qty', '!=', 0);
 
         if ($request->location_name) {
@@ -178,13 +178,13 @@ class StockTrackingController extends Controller
 
     public function showAll(Request $request)
     {
-        $userBranchIds = auth()->user()->user_branches()->pluck('branch_id');
-        $userRole = getAuthUser()->getRoleNames()->first();
+        $userBranchId = getAuthUser()->branch_id;
+        // $userRole = getAuthUser()->getRoleNames()->first();
        
         $query = StockTrackingRecord::with('stockTracking')
-            ->whereHas('stockTracking', function ($q) use ($userBranchIds,$userRole) {
-                $q->whereIn('from_branch', $userBranchIds)
-                  ->where('status', $userRole);
+            ->whereHas('stockTracking', function ($q) use ($userBranchId) {
+                $q->where('from_branch', $userBranchId);
+                //   ->where('status', $userRole);
             });
 
        if ($request->product_code && $request->status) {
@@ -250,14 +250,14 @@ class StockTrackingController extends Controller
 
     public function stock_in_show(Request $request)
     {
-        $userBranchIds = auth()->user()->user_branches()->pluck('branch_id');
-        $userRole = getAuthUser()->getRoleNames()->first();
+        $userBranchId = getAuthUser()->branch_id;
+        // $userRole = getAuthUser()->getRoleNames()->first();
 
         $query = StockTrackingRecord::with('stockTracking')
             ->where('status', 'in')
-            ->whereHas('stockTracking', function ($q) use ($userBranchIds,$userRole) {
-                $q->whereIn('from_branch', $userBranchIds)
-                ->where('status', $userRole);
+            ->whereHas('stockTracking', function ($q) use ($userBranchId) {
+                $q->where('from_branch', $userBranchId);
+                // ->where('status', $userRole);
             });
 
         if ($request->filled('from_date')) {
@@ -403,14 +403,14 @@ public function getStockPname($pname, $branch)
 
     public function stock_out_show(Request $request)
     {
-        $userBranchIds = auth()->user()->user_branches()->pluck('branch_id');
-        $userRole = getAuthUser()->getRoleNames()->first();
+        $userBranchId = getAuthUser()->branch_id;
+        // $userRole = getAuthUser()->getRoleNames()->first();
 
         $query = StockTrackingRecord::with('stockTracking')
             ->where('status', 'out')
-            ->whereHas('stockTracking', function ($q) use ($userBranchIds,$userRole) {
-                $q->whereIn('from_branch', $userBranchIds)
-                ->where('status', $userRole);
+            ->whereHas('stockTracking', function ($q) use ($userBranchId) {
+                $q->where('from_branch', $userBranchId);
+                // ->where('status', $userRole);
             });
 
 
@@ -549,13 +549,13 @@ public function getStockPname($pname, $branch)
     public function stock_transfer_show(Request $request)
     {
 
-        $userBranchIds = auth()->user()->user_branches()->pluck('branch_id');
-        $userRole = getAuthUser()->getRoleNames()->first();
+        $userBranchId = getAuthUser()->branch_id;
+        // $userRole = getAuthUser()->getRoleNames()->first();
         $query = StockTrackingRecord::with('stockTracking')
             ->whereIn('status',  ['Transfer In', 'Transfer Out'])
-            ->whereHas('stockTracking', function ($q) use ($userBranchIds,$userRole) {
-                $q->whereIn('from_branch', $userBranchIds)
-                ->where('status', $userRole);
+            ->whereHas('stockTracking', function ($q) use ($userBranchId) {
+                $q->where('from_branch', $userBranchId);
+                // ->where('status', $userRole);
             });
 
 
@@ -580,4 +580,67 @@ public function getStockPname($pname, $branch)
             'data' => $results
         ]);
     }
+
+public function destoryStockIn($id)
+{
+    try {
+        $stock = StockTrackingRecord::find($id);
+
+        if (!$stock) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
+
+        $stockTracking = StockTracking::find($stock->stock_tracking_id);
+
+        if ($stockTracking) {
+            // Use >= to allow deletion when qty matches exactly
+            if ($stockTracking->total_qty >= $stock->qty) {
+                $stockTracking->decrement('total_qty', $stock->qty);
+            } else {
+                return response()->json([
+                    'message' => 'Delete failed',
+                    'error' => 'Total Qty must be greater than or equal to delete qty'
+                ], 400);
+            }
+        }
+
+        $stock->delete();
+
+        return response()->json(['message' => 'Deleted successfully']);
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Delete failed',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+public function destoryStockOut($id)
+{
+    try {
+        $stock = StockTrackingRecord::find($id);
+
+        if (!$stock) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
+
+        $stockTracking = StockTracking::find($stock->stock_tracking_id);
+
+        if ($stockTracking) {
+         $stockTracking->increment('total_qty', $stock->qty);
+        }
+
+        $stock->delete();
+
+        return response()->json(['message' => 'Deleted successfully']);
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Delete failed',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+
+
 }

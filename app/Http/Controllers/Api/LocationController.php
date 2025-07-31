@@ -101,10 +101,10 @@ public function index()
 
 public function showAll(Request $request) 
 {
-    $userBranchIds = auth()->user()->user_branches()->pluck('branch_id');
+    $userBranchIds = getAuthUser()->branch_id;
     $roles = getAuthUser()->getRoleNames();
 
-    $query = Location::whereIn('branch_id', $userBranchIds);
+    $query = Location::where('branch_id', $userBranchIds);
 
     if ($request->filled('zone')) {
         $zone = strtoupper($request->zone);
