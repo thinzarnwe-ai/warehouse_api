@@ -48,9 +48,9 @@ class StockTrackingController extends Controller
 
     try {
  
-        $locationExists = Location::where('location_name', $request->location_name)->exists();
-
-        if (!$locationExists) {
+        $locationExist = Location::where('location_name', $request->location_name)->get();
+        // dd();
+        if (!$locationExist) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'သတ်မှတ်ထားသော Location Name မရှိသေးပါ သဖြင့် Location Name သတ်မှတ်ပေးပါရန်လိုအပ်ပါသည်',
@@ -60,7 +60,7 @@ class StockTrackingController extends Controller
 
     
         $stockTracking = StockTracking::where('from_branch', $request->from_branch)
-            ->where('location_name', $request->location_name)
+            ->where('location_id', $locationExist[0]->id)
             ->where('product_code', $request->product_code)
             ->first();
 
@@ -72,7 +72,7 @@ class StockTrackingController extends Controller
             $stockTracking = StockTracking::create([
                 'product_code'  => $request->product_code,
                 'product_name'  => $request->product_name,
-                'location_name' => $request->location_name,
+                'location_id' => $locationExist[0]->id,
                 'total_qty'     => $request->qty,
                 'from_branch'   => $request->from_branch,
                 'status'        => $userRole,
@@ -150,9 +150,8 @@ class StockTrackingController extends Controller
     {
         $userBranchId = getAuthUser()->branch_id; 
         // $userRole = getAuthUser()->getRoleNames()->first();
-        $query = StockTracking::with('stockTrackingRecords')
+        $query = StockTracking::with('stockTrackingRecords','location:id,location_name')
             ->where('from_branch', $userBranchId)
-            // ->where('status', $userRole)
             ->where('total_qty', '!=', 0);
 
         if ($request->location_name) {
@@ -181,7 +180,7 @@ class StockTrackingController extends Controller
         $userBranchId = getAuthUser()->branch_id;
         // $userRole = getAuthUser()->getRoleNames()->first();
        
-        $query = StockTrackingRecord::with('stockTracking')
+        $query = StockTrackingRecord::with('stockTracking.location:id,location_name')
             ->whereHas('stockTracking', function ($q) use ($userBranchId) {
                 $q->where('from_branch', $userBranchId);
                 //   ->where('status', $userRole);
@@ -210,7 +209,7 @@ class StockTrackingController extends Controller
 
     public function detail($id){
 
-        $query = StockTrackingRecord::with('stockTracking','user')
+        $query = StockTrackingRecord::with('stockTracking.location:id,location_name','user')
                 ->where('id', $id)
                 ->get();
 
@@ -230,7 +229,7 @@ class StockTrackingController extends Controller
 
     public function stockDetail($id){
 
-        $query = StockTracking::with('stockTrackingRecords')
+        $query =  StockTracking::with('stockTrackingRecords','location:id,location_name')
                 ->where('id', $id)
                 ->get();
 
@@ -253,7 +252,9 @@ class StockTrackingController extends Controller
         $userBranchId = getAuthUser()->branch_id;
         // $userRole = getAuthUser()->getRoleNames()->first();
 
-        $query = StockTrackingRecord::with('stockTracking')
+        $query = StockTrackingRecord::with([
+                'stockTracking.location:id,location_name' 
+            ])
             ->where('status', 'in')
             ->whereHas('stockTracking', function ($q) use ($userBranchId) {
                 $q->where('from_branch', $userBranchId);
@@ -303,8 +304,10 @@ class StockTrackingController extends Controller
                         'data' => [],
                     ], 404);
                 }
+
+            $location = Location::where('location_name', $request->location_name)->get();
             $stock_tracking = StockTracking::where('from_branch', $request->from_branch)
-                ->where('location_name', $request->location_name)
+                ->where('location_id', $location[0]->id)
                 ->where('product_code', $request->product_code)
                 ->first();
             if ($stock_tracking) {
@@ -341,15 +344,20 @@ class StockTrackingController extends Controller
 {
     $userRole = getAuthUser()->getRoleNames()->first();
 
-    $stockItem = StockTracking::where('product_code', $pcode)
-        ->where('total_qty', '!=', 0)
-        ->where('from_branch', $branch)
-        ->where('status', $userRole)
-        ->select('product_name', 'location_name', 'total_qty')
-        ->orderBy('updated_at', 'desc')
-        ->get();
+   $stockItem = StockTracking::where('product_code', $pcode)
+    ->where('total_qty', '!=', 0)
+    ->where('from_branch', $branch)
+    ->where('status', $userRole)
+    ->join('locations', 'stock_trackings.location_id', '=', 'locations.id')
+    ->select(
+        'product_name',
+        'locations.location_name',
+        'stock_trackings.total_qty'
+    )
+    ->orderBy('stock_trackings.updated_at', 'desc')
+    ->get();
 
-
+// dd($stockItem);
     if ($stockItem->isEmpty()) {
         return response()->json([
             'status' => 'error',
@@ -369,16 +377,21 @@ public function getStockPname($pname, $branch)
 {
     $userRole = getAuthUser()->getRoleNames()->first();
 
-   $stockItem = DB::table('stock_trackings')
-    ->selectRaw('DISTINCT ON (product_name) product_name, product_code, total_qty, location_name')
-    ->where('product_name', 'ILIKE', '%' . $pname . '%')
-    ->where('total_qty', '!=', 0)
-    ->where('from_branch', $branch)
-    ->where('status', $userRole)
-    ->orderBy('product_name')         
-    ->orderBy('created_at', 'asc')            
-    ->limit(10)
-    ->get();
+    $stockItem = DB::table('stock_trackings as st')
+        ->join('locations as l', 'l.id', '=', 'st.location_id')
+        ->selectRaw('DISTINCT ON (st.product_name)
+                    st.product_name,
+                    st.product_code,
+                    st.total_qty,
+                    l.location_name')
+        ->where('st.product_name', 'ILIKE', "%{$pname}%")
+        ->where('st.total_qty', '!=', 0)
+        ->where('st.from_branch', $branch)
+        ->where('st.status', $userRole)
+        ->orderBy('st.product_name')          
+        ->orderBy('st.created_at', 'asc')   
+        ->limit(10)
+        ->get();
 
         
 
@@ -406,7 +419,7 @@ public function getStockPname($pname, $branch)
         $userBranchId = getAuthUser()->branch_id;
         // $userRole = getAuthUser()->getRoleNames()->first();
 
-        $query = StockTrackingRecord::with('stockTracking')
+        $query = StockTrackingRecord::with('stockTracking.location:id,location_name')
             ->where('status', 'out')
             ->whereHas('stockTracking', function ($q) use ($userBranchId) {
                 $q->where('from_branch', $userBranchId);
@@ -439,7 +452,7 @@ public function getStockPname($pname, $branch)
 
     public function statusTransferStore(Request $request)
     {
-        Log::info(['request'=>$request->all()]);
+        // Log::info(['request'=>$request->all()]);
         $request->validate([
             'location_name' => 'required',
             'product_code' => 'required',
@@ -460,16 +473,18 @@ public function getStockPname($pname, $branch)
                         'data' => [],
                     ], 404);
                 }
+            $locationName = Location::where('location_name', $request->location_name)->get();
+            $transferLocation = Location::where('location_name', $request->transfer_location)->get();
             $authUserId = getAuthUser()->id;
             $fromBranch = $request->from_branch;
             $productCode = $request->product_code;
             $transferQty = $request->transfer_qty;
-            $locationName = $request->location_name;
-            $transferLocation = $request->transfer_location;
-
+            // $locationName = $request->location_name;
+            // $transferLocation = $request->transfer_location;
+            // dd($locationName[0]->id);
             // 1. Reduce stock from original location
             $stockFrom = StockTracking::where('from_branch', $fromBranch)
-                ->where('location_name', $locationName)
+                ->where('location_id', $locationName[0]->id)
                 ->where('product_code', $productCode)
                 ->first();
 
@@ -488,14 +503,14 @@ public function getStockPname($pname, $branch)
                 'status' => 'Transfer In',
                 'user_id' => $authUserId,
                 'remark' => $request->remark,
-                'transfer_location' => $transferLocation,
+                'transfer_location_id' => $transferLocation[0]->id,
             ]);
 
             $inRecord->save();
              Log::info(['stockTo not null'=>$inRecord]);
             // 2. Increase or create stock at transfer location
             $stockTo = StockTracking::where('from_branch', $fromBranch)
-                ->where('location_name', $transferLocation)
+                ->where('location_id', $transferLocation[0]->id)
                 ->where('product_code', $productCode)
                 ->first();
            
@@ -506,7 +521,7 @@ public function getStockPname($pname, $branch)
                 
                 $userRole = getAuthUser()->getRoleNames()->first();
                 $stockTo = StockTracking::create([
-                    'location_name' => $transferLocation,
+                    'location_id' => $transferLocation[0]->id,
                     'from_branch' => $fromBranch,
                     'product_code' => $productCode,
                     'product_name' => $request->product_name,
@@ -523,7 +538,7 @@ public function getStockPname($pname, $branch)
                 'status' => 'Transfer Out',
                 'user_id' => $authUserId,
                 'remark' => $request->remark,
-                'transfer_location' => $locationName,
+                'transfer_location_id' => $locationName[0]->id,
             ]);
             $outRecord->save();
 
@@ -551,7 +566,7 @@ public function getStockPname($pname, $branch)
 
         $userBranchId = getAuthUser()->branch_id;
         // $userRole = getAuthUser()->getRoleNames()->first();
-        $query = StockTrackingRecord::with('stockTracking')
+        $query = StockTrackingRecord::with('stockTracking.location:id,location_name','location')
             ->whereIn('status',  ['Transfer In', 'Transfer Out'])
             ->whereHas('stockTracking', function ($q) use ($userBranchId) {
                 $q->where('from_branch', $userBranchId);

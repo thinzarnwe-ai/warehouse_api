@@ -119,18 +119,22 @@ public function showAll(Request $request)
         $query->whereRaw("(string_to_array(location_name, '_'))[4] = ?", [$request->bay]);
     }
 
-    // Role-based filter (prefix ending in S or W)
-    if ($roles->contains('Sale')) {
-        $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'S'");
-    } elseif ($roles->contains('Warehouse')) {
-        $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'W'");
-    } else {
-        // If role doesn't match, return empty
-        return response()->json([
-            'status' => 'success',
-            'data' => [],
-        ]);
-    }
+   if ($roles->contains('Sale')) {
+    $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'S'");
+} elseif ($roles->contains('Warehouse')) {
+    $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'W'");
+} elseif (
+    $roles->contains('Branch Manager') ||
+    $roles->contains('Operation Analystis')
+) {
+   
+} else {
+    
+    return response()->json([
+        'status' => 'success',
+        'data' => [],
+    ]);
+}
 
     $locations = $query->orderBy('created_at', 'desc')->paginate(20);
 

@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 class StockTrackingRecord extends Model
 {
     use HasFactory;
-    protected $fillable = ['stock_tracking_id','status','qty','user_id','remark','transfer_location'];
+    protected $fillable = ['stock_tracking_id','status','qty','user_id','remark','transfer_location_id'];
 
    public function stockTracking()
     {
@@ -19,5 +19,9 @@ class StockTrackingRecord extends Model
     {
         return $this->belongsTo(User::class, 'user_id');
     }
+
+    public function location(){
+    return $this->belongsTo(Location::class,'transfer_location_id', 'id');
+}
 
 }
