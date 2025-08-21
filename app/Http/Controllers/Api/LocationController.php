@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use Carbon\Carbon;
 use App\Models\Bay;
 use App\Models\Row;
+use App\Models\Side;
 use App\Models\Zone;
 use App\Models\Level;
 use App\Models\Branch;
@@ -17,6 +18,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\ZoneResource;
 use App\Http\Resources\LevelResource;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 
 class LocationController extends Controller
 {
@@ -26,6 +28,7 @@ public function index()
     $rows = Row::get();
     $bays = Bay::get();
     $levels = Level::get();
+    $sides = Side::get();
 
     $branches = UserBranch::with('branch')
         ->where('user_id', auth()->id())
@@ -41,6 +44,7 @@ public function index()
             'rows' => RowResource::collection($rows),
             'bays' => BayResource::collection($bays),
             'levels' => LevelResource::collection($levels),
+            'sides' => $sides,
             'branches' => $branches->map(function ($branch) {
                 return [
                     'id' => $branch->id,
@@ -55,6 +59,7 @@ public function index()
 
     public function store(Request $request)
     {
+       
         
     $validate = Validator::make($request->all(), [
         'branch_id' => 'required|exists:branches,id',
@@ -67,6 +72,7 @@ public function index()
     if ($validate->fails()) {
         return response()->json(['status' => 'error', 'message' => $validate->errors()]);
     }
+     Log::info(['validate' => $validate->validated()]);
 
     // Fetch name parts
     $branch = Branch::findOrFail($request->branch_id);
@@ -74,11 +80,17 @@ public function index()
     $row = Row::findOrFail($request->row_id);
     $bay = Bay::findOrFail($request->bay_id);
     $level = Level::findOrFail($request->level_id);
-
+    $request_side = $request->side_id ?? null; // Default to 1 if side_id is not provided
+    
+    $side_name = $request->side_id===null?'':Side::findOrFail($request->side_id)?->name; // Default to 'A' if side_id is not provided
+    Log::info([
+        
+        'side_name' => $side_name
+    ]);
     // Create location name
     if(getAuthUser()->getRoleNames()->contains('Sale')){
 
-        $locationName = "{$branch->branch_short_name}S_{$zone->name}_{$row->name}_{$bay->name}_{$level->name}";
+        $locationName = "{$branch->branch_short_name}S_{$zone->name}_{$row->name}_{$side_name}_{$bay->name}_{$level->name}";
     }else{
         $locationName = "{$branch->branch_short_name}W_{$zone->name}_{$row->name}_{$bay->name}_{$level->name}";
     }
@@ -119,20 +131,24 @@ public function showAll(Request $request)
         $query->whereRaw("(string_to_array(location_name, '_'))[4] = ?", [$request->bay]);
     }
 
-    // Role-based filter (prefix ending in S or W)
-    if ($roles->contains('Sale')) {
-        $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'S'");
-    } elseif ($roles->contains('Warehouse')) {
-        $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'W'");
-    } else {
-        // If role doesn't match, return empty
-        return response()->json([
-            'status' => 'success',
-            'data' => [],
-        ]);
-    }
+   if ($roles->contains('Sale')) {
+    $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'S'");
+} elseif ($roles->contains('Warehouse')) {
+    $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'W'");
+} elseif (
+    $roles->contains('Branch Manager') ||
+    $roles->contains('Operation Analystis')
+) {
+   
+} else {
+    
+    return response()->json([
+        'status' => 'success',
+        'data' => [],
+    ]);
+}
 
-    $locations = $query->orderBy('created_at', 'desc')->paginate(20);
+    $locations = $query->orderBy('created_at')->paginate(20);
 
     return response()->json([
         'status' => 'success',
