@@ -583,36 +583,41 @@ public function getStockPname($pname, $branch)
 
 public function destoryStockIn($id)
 {
-    try {
-        $stock = StockTrackingRecord::find($id);
+  try {
+    $stock = StockTrackingRecord::find($id);
 
-        if (!$stock) {
-            return response()->json(['message' => 'Not found'], 404);
+    if (!$stock) {
+        return response()->json(['message' => 'Not found'], 404);
+    }
+
+    $stockTracking = StockTracking::find($stock->stock_tracking_id);
+
+    if ($stockTracking) {
+        if ($stockTracking->total_qty >= $stock->qty) {
+            $stockTracking->decrement('total_qty', $stock->qty);
+        } else {
+            return response()->json([
+                'message' => 'Delete failed',
+                'error' => 'Total Qty must be greater than or equal to delete qty'
+            ], 400);
         }
+    }
 
-        $stockTracking = StockTracking::find($stock->stock_tracking_id);
+    $stock->update([
+        'deleted_at' => now()
+    ]);
 
-        if ($stockTracking) {
-            // Use >= to allow deletion when qty matches exactly
-            if ($stockTracking->total_qty >= $stock->qty) {
-                $stockTracking->decrement('total_qty', $stock->qty);
-            } else {
-                return response()->json([
-                    'message' => 'Delete failed',
-                    'error' => 'Total Qty must be greater than or equal to delete qty'
-                ], 400);
-            }
-        }
+    // dd(now());
+    // dd("hi");
 
-        $stock->delete();
-
-        return response()->json(['message' => 'Deleted successfully']);
+    return response()->json(['message' => 'Deleted successfully']);
     } catch (\Exception $e) {
         return response()->json([
             'message' => 'Delete failed',
             'error' => $e->getMessage()
         ], 500);
     }
+
 }
 
 public function destoryStockOut($id)
@@ -630,7 +635,9 @@ public function destoryStockOut($id)
          $stockTracking->increment('total_qty', $stock->qty);
         }
 
-        $stock->delete();
+         $stock->update([
+        'deleted_at' => now()
+    ]);
 
         return response()->json(['message' => 'Deleted successfully']);
     } catch (\Exception $e) {
@@ -640,7 +647,6 @@ public function destoryStockOut($id)
         ], 500);
     }
 }
-
 
 
 }
