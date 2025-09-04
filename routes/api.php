@@ -43,7 +43,7 @@ Route::middleware(['auth:sanctum'])->group(function (){
     Route::post('stock_tracking_in',[StockTrackingController::class, 'store']);
     Route::get('stock_tracking_in',[StockTrackingController::class, 'stock_in_show']);
     Route::get('user-branch',[StockTrackingController::class, 'branch']);
-    Route::get('product/{pcode}', [StockTrackingController::class, 'getPcode']);
+    Route::get('get-product/{pcode}/{branch}', [StockTrackingController::class, 'getPcode']);
     Route::get('product_name/{pname}', [StockTrackingController::class,'getPname']);
     Route::get('product/{pcode}/{branch}',[StockTrackingController::class,'getStockPcode']);
     Route::get('product_name/{pname}/{branch}', [StockTrackingController::class,'getStockPname']);
