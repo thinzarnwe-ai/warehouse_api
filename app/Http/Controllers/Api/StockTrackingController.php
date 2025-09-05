@@ -106,59 +106,6 @@ class StockTrackingController extends Controller
     }
 }
 
-
-    // public function getPcode($pcode,$branch_id)
-    // {
-    //     // dd($pcode,$branch_id);
-
-    //     // $productName = DB::connection('pg_master')
-    //     //     ->table('master_data.master_product')
-    //     //     ->select('product_code', 'product_name1')
-    //     //     ->where('product_code', $pcode)
-    //     //     ->first();
-
-    //         $branch = Branch::whereId($branch_id)->first();
-    //         // dd($branch->id);
-           
-    //         if ($branch->id == 1) {
-    //             // dd("hi");
-    //               $productName = DB::connection('pos101_pgsql')->table('stockcard.vw_searchpricebycat')->select('product_code', 'barcode_code', 'barcode_bill_name', 'unit_rate')->where('product_code', $pcode)->orWhere('barcode_code', $pcode)->first();
-    //                 dd($productName);
-    //             } else if ($branch->id == 3) {
-    //                $productName = DB::connection('pos102_pgsql')->table('stockcard.vw_searchpricebycat')->where(['product_code' => $pcode, 'barcode_code' => $pcode])->first();
-    //             } else if ($branch->id == 2) {
-    //                $productName = DB::connection('pos103_pgsql')->table('stockcard.vw_searchpricebycat')->where(['product_code' => $pcode, 'barcode_code' => $pcode])->first();
-    //             } else if ($branch->id == 2) {
-    //                  $productName = DB::connection('pos104_pgsql')->table('stockcard.vw_searchpricebycat')->where(['product_code' => $pcode, 'barcode_code' => $pcode])->first();
-    //             } else if ($branch->id == 2) {
-    //                $productName = DB::connection('pos105_pgsql')->table('stockcard.vw_searchpricebycat')->where(['product_code' => $pcode, 'barcode_code' => $pcode])->first();
-    //             } else if ($branch->id == 2) {
-    //               $productName = DB::connection('pos106_pgsql')->table('stockcard.vw_searchpricebycat')->where(['product_code' => $pcode, 'barcode_code' => $pcode])->first();
-    //             } else if ($branch->id == 2) {
-    //                 $productName = DB::connection('pos107_pgsql')->table('stockcard.vw_searchpricebycat')->where(['product_code' => $pcode, 'barcode_code' => $pcode])->first();
-    //             } else if ($branch->id == 2) {
-    //                 $productName = DB::connection('pos108_pgsql')->table('stockcard.vw_searchpricebycat')->where(['product_code' => $pcode, 'barcode_code' => $pcode])->first();
-    //             } else if ($branch->id == 2) {
-    //                 $productName = DB::connection('pos110_pgsql')->table('stockcard.vw_searchpricebycat')->where(['product_code' => $pcode, 'barcode_code' => $pcode])->first();
-    //             } else if ($branch->id == 2) {
-    //                 $productName = DB::connection('pos112_pgsql')->table('stockcard.vw_searchpricebycat')->where(['product_code' => $pcode, 'barcode_code' => $pcode])->first();
-    //             } else if ($branch->id== 2) {
-    //                 $productName = DB::connection('pos113_pgsql')->table('stockcard.vw_searchpricebycat')->where(['product_code' => $pcode, 'barcode_code' => $pcode])->first();
-    //             } else if ($branch->id == 2) {
-    //                 $productName = DB::connection('pos114_pgsql')->table('stockcard.vw_searchpricebycat')->where(['product_code' => $pcode, 'barcode_code' => $pcode])->first();
-    //             }
-
-    //             dd($productName);
-
-    //     return response()->json([
-    //         'status' => 'success',
-    //         'data' => [
-    //             'product_name' => $productName,
-    //         ]
-
-    //     ]);
-    // }
-
     public function getPcode($pcode, $branch_id)
         {
             $branch = Branch::whereId($branch_id)->first();
