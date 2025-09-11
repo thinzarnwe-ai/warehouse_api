@@ -123,7 +123,7 @@ class StockTrackingController extends Controller
                 6  => 'pos106_pgsql',
                 7  => 'pos107_pgsql',
                 8  => 'pos108_pgsql',
-                9 => 'pos110_pgsql',
+                9  => 'pos110_pgsql',
                 10 => 'pos112_pgsql',
                 11 => 'pos113_pgsql',
                 12 => 'pos114_pgsql',
@@ -136,7 +136,7 @@ class StockTrackingController extends Controller
 
             $productName = DB::connection($connection)
                 ->table('stockcard.vw_searchpricebycat')
-                ->select('product_code', 'barcode_code', 'barcode_bill_name', 'unit_rate')
+                ->select('product_code', 'barcode_code', 'barcode_bill_name', 'unit_rate','unit_code')
                 ->where('product_code', $pcode)
                 ->orWhere('barcode_code', $pcode)
                 ->first();
@@ -151,27 +151,27 @@ class StockTrackingController extends Controller
         }
 
 
- public function getPname($pname)
-{
-    $productName = DB::connection('pg_master')
-        ->table('master_data.master_product')
-        ->select('product_code', 'product_name1')
-        ->where('product_name1', 'ILIKE', '%' . $pname . '%') 
-        ->where('inactive_po','A')
-        ->limit(10)
-        ->get();
+//  public function getPname($pname)
+// {
+//     $productName = DB::connection('pg_master')
+//         ->table('master_data.master_product')
+//         ->select('product_code', 'product_name1')
+//         ->where('product_name1', 'ILIKE', '%' . $pname . '%') 
+//         ->where('inactive_po','A')
+//         ->limit(10)
+//         ->get();
 
 
 
         
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'product_name' => $productName,
-            ]
+//         return response()->json([
+//             'status' => 'success',
+//             'data' => [
+//                 'product_name' => $productName,
+//             ]
 
-        ]);
-}
+//         ]);
+// }
 
     
 

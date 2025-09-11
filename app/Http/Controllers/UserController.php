@@ -78,7 +78,7 @@ class UserController extends Controller
     {
       
 
-        $users = User::with('branches')->get();
+        $users = User::with('branches')->paginate(10);
         $branches = Branch::all();
         $roles = Role::all();
 
