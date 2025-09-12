@@ -127,6 +127,7 @@ class StockTrackingController extends Controller
                 10 => 'pos112_pgsql',
                 11 => 'pos113_pgsql',
                 12 => 'pos114_pgsql',
+                14 => 'pos109_pgsql',
                 default => null,
             };
 

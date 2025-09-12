@@ -226,6 +226,21 @@ return [
             'sslmode' => 'prefer',
         ],
 
+          'pos109_pgsql' => [
+            'driver' => 'pgsql',
+            'url' => env('DATABASE_URL'),
+            'host' => env('POS109_DB_HOST', '127.0.0.1'),
+            'port' => env('POS109_DB_PORT', '5432'),
+            'database' => env('POS109_DB_DATABASE', 'forge'),
+            'username' => env('POS109_DB_USERNAME', 'forge'),
+            'password' => env('POS109_DB_PASSWORD', ''),
+            'charset' => 'utf8',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'schema' => 'public',
+            'sslmode' => 'prefer',
+        ],
+
         'pos110_pgsql' => [
             'driver' => 'pgsql',
             'url' => env('DATABASE_URL'),
