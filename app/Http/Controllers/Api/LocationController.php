@@ -135,6 +135,7 @@ public function showAll(Request $request)
     $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'S'");
 } elseif ($roles->contains('Warehouse')) {
     $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'W'");
+    //  ->orWhereRaw("right((string_to_array(location_name, '-'))[1], 1) = 'D'");
 } elseif (
     $roles->contains('Branch Manager') ||
     $roles->contains('Operation Analystis')
