@@ -155,27 +155,27 @@ class StockTrackingController extends Controller
         }
 
 
-//  public function getPname($pname)
-// {
-//     $productName = DB::connection('pg_master')
-//         ->table('master_data.master_product')
-//         ->select('product_code', 'product_name1')
-//         ->where('product_name1', 'ILIKE', '%' . $pname . '%') 
-//         ->where('inactive_po','A')
-//         ->limit(10)
-//         ->get();
+ public function getPname($pname)
+{
+    $productName = DB::connection('pg_master')
+        ->table('master_data.master_product')
+        ->select('product_code', 'product_name1')
+        ->where('product_name1', 'ILIKE', '%' . $pname . '%') 
+        ->where('inactive_po','A')
+        ->limit(10)
+        ->get();
 
 
 
         
-//         return response()->json([
-//             'status' => 'success',
-//             'data' => [
-//                 'product_name' => $productName,
-//             ]
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'product_name' => $productName,
+            ]
 
-//         ]);
-// }
+        ]);
+}
 
     
 
