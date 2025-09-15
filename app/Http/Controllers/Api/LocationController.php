@@ -113,11 +113,14 @@ public function index()
 
 public function showAll(Request $request) 
 {
+    
+    // dd(getAuthUser()->branch_id);
     $userBranchIds = getAuthUser()->branch_id;
     $roles = getAuthUser()->getRoleNames();
 
     $query = Location::where('branch_id', $userBranchIds);
 
+    // dd($query->get());
     if ($request->filled('zone')) {
         $zone = strtoupper($request->zone);
         $query->whereRaw("(string_to_array(location_name, '_'))[2] = ?", [$zone]);
@@ -134,11 +137,19 @@ public function showAll(Request $request)
    if ($roles->contains('Sale')) {
     $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'S'");
 } elseif ($roles->contains('Warehouse')) {
-    $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'W'");
-    //  ->orWhereRaw("right((string_to_array(location_name, '-'))[1], 1) = 'D'");
+    if (in_array($userBranchIds, [15, 16, 17])) {
+        // dd("hello");
+    //    $query->get();
+    } else {
+        $query->where(function ($q) {
+            $q->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'W'")
+              ->orWhereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'D'");
+        });
+    }
 } elseif (
     $roles->contains('Branch Manager') ||
-    $roles->contains('Operation Analystis')
+    $roles->contains('Operation Analystis') 
+    
 ) {
    
 } else {
