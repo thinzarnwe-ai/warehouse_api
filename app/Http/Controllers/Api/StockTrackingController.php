@@ -145,6 +145,13 @@ class StockTrackingController extends Controller
                 ->orWhere('barcode_code', $pcode)
                 ->first();
             // dd($productName);
+
+               if (!$productName) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Product not found',
+                    ], 404);
+                }
                 return response()->json([
                     'status' => 'success',
                     'data' => [
