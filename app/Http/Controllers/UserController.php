@@ -234,37 +234,46 @@ class UserController extends Controller
 
     public function user_search(Request $request)
     {
+        // dd($request->all());
 
-        getRequiredData();
+        Session::put('name', $request->name);
+        Session::put('emp_id', $request->emp_id);
+
         $branches               = Branch::all();
         $roles                  = Role::all();
 
-        $role                   = $request->role;
+        $role                   = $request->role_id;
         $emp_id                 = $request->emp_id;
         $branch_id              = $request->branch_id;
-        $category_id            = $request->category_id;
+        $name            = $request->name;
 
-        $users                  = $this->search_query($role,$emp_id,$branch_id,$category_id);
+        $users                  = $this->search_query($role,$emp_id,$branch_id,$name);
 
-        Session::put(['branch_id'=>$branch_id,'role'=>$role,'emp_id'=>$emp_id,'category_id'=>$category_id]);
+        Session::put(['branch_id'=>$branch_id,'role'=>$role,'emp_id'=>$emp_id,'name'=>$name]);
 
         $users->appends($request->all());
 
         return view('admins.users.index',compact('users','branches','roles'));
     }
 
-    public function search_query($role,$emp_id,$branch_id,$category_id)
+    public function search_query($role,$emp_id,$branch_id,$name)
     {
         $result                  = User::query();
 
         if (!empty($role)) {
             $result = User::whereHas('roles', function ($q) use ($role) {
-                $q->where('name', $role);
+                $q->where('id', $role);
             });
 
         }
         if (!empty($emp_id)) {
             $result         = $result->where('emp_id',$emp_id);
+
+        }
+
+          if (!empty($name)) {
+
+            $result         = $result->where('name','ILIKE', '%'.$name.'%');
 
         }
         if (!empty($branch_id)) {

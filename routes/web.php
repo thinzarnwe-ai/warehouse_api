@@ -28,4 +28,5 @@ Route::middleware(['auth', 'role:Super-Admin'])->group(function () {
     Route::resource('admin/roles', RoleController::class);
     Route::resource('admin/permissions', PermissionController::class);
     Route::resource('admin/users', UserController::class);
+    Route::get('user/search', [UserController::class ,'user_search']);
 });
