@@ -195,19 +195,15 @@ class StockTrackingController extends Controller
             ->where('from_branch', $userBranchId)
             // ->where('status', $userRole)
             ->where('total_qty', '!=', 0);
+            Log::info($request->location_name);
+            if ($request->location_name) {
+            $query->where('location_name', $request->location_name);
+                }
 
-        if ($request->location_name) {
-            $query->whereRaw('LOWER(location_name) LIKE ?', ['%' . strtolower($request->location_name) . '%']);
-        }
+            if ($request->product_keyword) { 
+                $keyword = strtolower($request->product_keyword); 
+                $query->where(function ($q) use ($keyword) { $q->whereRaw('LOWER(product_code) LIKE ?', ["%{$keyword}%"]) ->orWhereRaw('LOWER(product_name) LIKE ?', ["%{$keyword}%"]); }); }
 
-        if ($request->product_keyword) {
-            $keyword = strtolower($request->product_keyword);
-
-            $query->where(function ($q) use ($keyword) {
-                $q->whereRaw('LOWER(product_code) LIKE ?', ["%{$keyword}%"])
-                ->orWhereRaw('LOWER(product_name) LIKE ?', ["%{$keyword}%"]);
-            });
-        }
 
         $results = $query->orderBy('updated_at', 'desc')->paginate(10);
 
@@ -385,7 +381,7 @@ class StockTrackingController extends Controller
     $stockItem = StockTracking::where('product_code', $pcode)
         ->where('total_qty', '!=', 0)
         ->where('from_branch', $branch)
-        ->where('status', $userRole)
+        // ->where('status', $userRole)                                                                                                     
         ->select('product_name', 'location_name', 'total_qty')
         ->orderBy('updated_at', 'desc')
         ->get();
@@ -415,7 +411,6 @@ public function getStockPname($pname, $branch)
     ->where('product_name', 'ILIKE', '%' . $pname . '%')
     ->where('total_qty', '!=', 0)
     ->where('from_branch', $branch)
-    ->where('status', $userRole)
     ->orderBy('product_name')         
     ->orderBy('created_at', 'asc')            
     ->limit(10)
