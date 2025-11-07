@@ -106,61 +106,75 @@ class StockTrackingController extends Controller
     }
 }
 
-    public function getPcode($pcode, $branch_id)
-        {
-            $branch = Branch::whereId($branch_id)->first();
+public function getPcode($pcode, $branch_id)
+{
+    $branch = Branch::find($branch_id);
 
-            if (!$branch) {
-                return null; 
-            }
+    if (!$branch) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Invalid branch ID',
+        ], 400);
+    }
 
-            $connection = match ($branch->id) {
-                1  => 'pos101_pgsql',
-                2  => 'pos102_pgsql',
-                3  => 'pos103_pgsql',
-                4  => 'pos104_pgsql',
-                5  => 'pos105_pgsql',
-                6  => 'pos106_pgsql',
-                7  => 'pos107_pgsql',
-                8  => 'pos108_pgsql',
-                9  => 'pos110_pgsql',
-                10 => 'pos112_pgsql',
-                11 => 'pos113_pgsql',
-                12 => 'pos114_pgsql',
-                13 => 'pos115_pgsql',
-                14 => 'pos109_pgsql',
-                15 => 'pos505_pgsql',
-                16 => 'pos510_pgsql',
-                17 => 'pos511_pgsql',
-                default => null,
-            };
+    $connection = match ($branch->id) {
+        1  => 'pos101_pgsql',
+        2  => 'pos102_pgsql',
+        3  => 'pos103_pgsql',
+        4  => 'pos104_pgsql',
+        5  => 'pos105_pgsql',
+        6  => 'pos106_pgsql',
+        7  => 'pos107_pgsql',
+        8  => 'pos108_pgsql',
+        9  => 'pos110_pgsql',
+        10 => 'pos112_pgsql',
+        11 => 'pos113_pgsql',
+        12 => 'pos114_pgsql',
+        13 => 'pos115_pgsql',
+        14 => 'pos109_pgsql',
+        15 => 'pos505_pgsql',
+        16 => 'pos510_pgsql',
+        17 => 'pos511_pgsql',
+        default => null,
+    };
 
-            if (!$connection) {
-                return null;
-            }
+    if (!$connection) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Database connection not found',
+        ], 400);
+    }
 
-            $productName = DB::connection($connection)
-                ->table('stockcard.vw_searchpricebycat')
-                ->select('product_code', 'barcode_code', 'barcode_bill_name', 'unit_rate','unit_code')
-                ->where('product_code', $pcode)
-                ->orWhere('barcode_code', $pcode)
-                ->first();
-            // dd($productName);
+    $query = DB::connection($connection)
+        ->table('stockcard.vw_searchpricebycat')
+        ->select('product_code', 'barcode_code', 'barcode_bill_name', 'unit_rate', 'unit_code');
 
-               if (!$productName) {
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Product not found',
-                    ], 404);
-                }
-                return response()->json([
-                    'status' => 'success',
-                    'data' => [
-                        'product_name' => $productName,
-                    ]
+    if (is_numeric($pcode)) {
+        $query->where('barcode_code', $pcode);
+    } else {
+        $query->where('barcode_bill_name', 'ILIKE', '%' . $pcode . '%');
+    }
 
-                ]);
-        }
+    
+    $products = $query->limit(10)->get();
+    // dd($products);
+
+  if ($products->isEmpty()) {
+    return response()->json([
+        'status' => 'error',
+        'message' => 'Product not found',
+    ], 404);
+}
+
+return response()->json([
+    'status' => 'success',
+    'data' => [
+        'products' => $products,
+    ]
+]);
+
+}
+
 
 
  public function getPname($pname)
@@ -172,8 +186,6 @@ class StockTrackingController extends Controller
         ->where('inactive_po','A')
         ->limit(10)
         ->get();
-
-
 
         
         return response()->json([
@@ -375,31 +387,44 @@ class StockTrackingController extends Controller
 
 
  public function getStockPcode($pcode, $branch)
-{
-    $userRole = getAuthUser()->getRoleNames()->first();
+    {
+        $userRole = getAuthUser()->getRoleNames()->first();
 
-    $stockItem = StockTracking::where('product_code', $pcode)
-        ->where('total_qty', '!=', 0)
-        ->where('from_branch', $branch)
-        // ->where('status', $userRole)                                                                                                     
-        ->select('product_name', 'location_name', 'total_qty')
-        ->orderBy('updated_at', 'desc')
-        ->get();
-
-
-    if ($stockItem->isEmpty()) {
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Product Not Found!',
-            'data' => [],
-        ], 404);
+         if (is_numeric($pcode)) {
+         $stockItem = StockTracking::where('product_code', $pcode)
+            ->where('total_qty', '!=', 0)
+            ->where('from_branch', $branch)
+            // ->where('status', $userRole)                                                                                                     
+            ->select('product_name', 'location_name', 'total_qty')
+            ->orderBy('updated_at', 'desc')
+            ->get();
+    } else {
+         $stockItem = DB::table('stock_trackings')
+            ->selectRaw('DISTINCT ON (product_name) product_name, product_code, total_qty, location_name')
+            ->where('product_name', 'ILIKE', '%' . $pcode . '%')
+            ->where('total_qty', '!=', 0)
+            ->where('from_branch', $branch)
+            ->orderBy('product_name')         
+            ->orderBy('created_at', 'asc')            
+            ->limit(10)
+            ->get();
     }
 
-    return response()->json([
-        'status' => 'success',
-        'data' => $stockItem, 
-    ]);
-}
+    // dd($stockItem);
+
+        if ($stockItem->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Product Not Found!',
+                'data' => [],
+            ], 404);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $stockItem, 
+        ]);
+    }
 
 
 public function getStockPname($pname, $branch)
