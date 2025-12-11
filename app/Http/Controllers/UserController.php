@@ -95,43 +95,57 @@ class UserController extends Controller
     }
 
 
-    public function store(UserRequest $request)
-    {
-        // dd($request->all());
-        DB::beginTransaction();
-        try {
-                $input = $request->all();
-                // dd($input);
-                $input['password'] = Hash::make($input['password']);
-                $input['branch_id'] = $request->branch_id[0];
-                // unset($input['branch_id']);
-                $user = User::create($input);
-                $user_id = $user->id;
-                $branch_ids = $request->branch_id;
-                
-                foreach ($branch_ids as $branch_id) {
-                    $userBranch['user_id'] = $user_id;
-                    $userBranch['branch_id'] = $branch_id;
-                    UserBranch::create($userBranch);
-                }
-            $role = Role::find($request->input('role_id'));
-            // dd($role);
-            if (!$role) {
-                DB::rollBack();
-                return response()->json(['error' => 'Role not found.'], 404);
-            }
+public function store(UserRequest $request)
+{
+    DB::beginTransaction();
 
-            $user->assignRole($role->id);
-            // dd($user);
-            DB::commit(); 
-            return response()->json(['success' => 'User created and role assigned successfully.']);
-        } catch (\Exception $e) {
-            Log::debug($e->getMessage());
-            DB::rollBack();
-            return response()->json(['error' => 'Something went wrong'], 500);
+    try {
+      
+        if (User::where('emp_id', $request->emp_id)->exists()) {
+            return response()->json([
+                'error' => true,
+                'message' => 'Employee ID already exists.'
+            ], 422);
         }
 
+        $input = $request->all();
+        $input['password'] = Hash::make($input['password']);
+        $input['branch_id'] = $request->branch_id[0];
+
+        $user = User::create($input);
+        $user_id = $user->id;
+
+        foreach ($request->branch_id as $branch_id) {
+            UserBranch::create([
+                'user_id' => $user_id,
+                'branch_id' => $branch_id
+            ]);
+        }
+
+        $role = Role::find($request->input('role_id'));
+
+        if (!$role) {
+            DB::rollBack();
+            return response()->json(['error' => 'Role not found.'], 404);
+        }
+
+        $user->assignRole($role->id);
+
+        DB::commit();
+
+        // return response()->json([
+        //     'success' => true,
+        //     'message' => 'User created and role assigned successfully.'
+        // ]);
+        return response()->json(['success' => 'User created and role assigned successfully.']);
+
+    } catch (\Exception $e) {
+        Log::debug($e->getMessage());
+        DB::rollBack();
+        return response()->json(['error' => 'Something went wrong'], 500);
     }
+}
+
 
 
     public function show($id)
