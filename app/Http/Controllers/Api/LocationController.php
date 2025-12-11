@@ -147,7 +147,7 @@ class LocationController extends Controller
             }
         } elseif (
             $roles->contains('Branch Manager') ||
-            $roles->contains('Operation Analysis')
+            $roles->contains('Operation Analystis')
 
         ) {
         } else {
