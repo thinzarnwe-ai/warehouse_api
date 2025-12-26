@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Models\ProductNameChangeLog;
 use Carbon\Carbon;
 use App\Models\Branch;
 use App\Models\Location;
@@ -12,6 +13,7 @@ use Illuminate\Support\Facades\DB;
 use App\Models\StockTrackingRecord;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
+use Psy\Readline\Hoa\Console;
 
 class StockTrackingController extends Controller
 {
@@ -331,59 +333,133 @@ return response()->json([
         ]);
     }
 
-    public function statusOutStore(Request $request)
-    {
-        // return response()->json(['message'=>'hello world']);
-        $request->validate([
-            'location_name' => 'required',
-            'product_code' => 'required',
-            'product_name' => 'required',
-            'qty' => 'required',
-            'reduce_qty' => 'required',
-            'remark' => 'required',
+public function statusOutStore(Request $request)
+{
+    $request->validate([
+        'location_name' => 'required',
+        'product_code'  => 'required',
+        'product_name'  => 'required',
+        'qty'           => 'required|numeric',
+        'reduce_qty'    => 'required|numeric',
+        'remark'        => 'required',
+    ]);
+
+    try {
+
+        $stock_tracking = StockTracking::where('from_branch', $request->from_branch)
+            ->where('location_name', $request->location_name)
+            ->where('product_code', $request->product_code)
+            ->first();
+
+        if (!$stock_tracking) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Stock not found',
+            ], 404);
+        }
+
+        if ($request->qty < $request->reduce_qty) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Stock တွင် ရှိနေသော total qty ထက်ပိုထုပ်ရျ်မရပါ',
+                'data'    => [],
+            ], 400);
+        }
+
+        $connection = match ($stock_tracking->from_branch) {
+            1  => 'pos101_pgsql',
+            2  => 'pos102_pgsql',
+            3  => 'pos103_pgsql',
+            4  => 'pos104_pgsql',
+            5  => 'pos105_pgsql',
+            6  => 'pos106_pgsql',
+            7  => 'pos107_pgsql',
+            8  => 'pos108_pgsql',
+            9  => 'pos110_pgsql',
+            10 => 'pos112_pgsql',
+            11 => 'pos113_pgsql',
+            12 => 'pos114_pgsql',
+            13 => 'pos115_pgsql',
+            14 => 'pos109_pgsql',
+            15 => 'pos505_pgsql',
+            16 => 'pos510_pgsql',
+            17 => 'pos511_pgsql',
+            default => null,
+        };
+
+        if (!$connection) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Database connection not found',
+            ], 400);
+        }
+
+        $barcodeProduct = DB::connection($connection)
+            ->table('stockcard.vw_searchpricebycat')
+            ->select('barcode_bill_name')
+            ->where('product_code', $request->product_code)
+            ->first();
+
+        if (!$barcodeProduct) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Product not found in barcode system',
+            ], 404);
+        }
+
+        $barcodeName = $barcodeProduct->barcode_bill_name;
+        $stockName   = $stock_tracking->product_name;
+        // dd($barcodeName, $stockName);
+
+        if ($barcodeName !== $stockName) {
+
+
+            $stock_tracking->update([
+                'product_name' => $barcodeName
+            ]);
+
+            // dd($stock_tracking);
+
+            $productLog = new ProductNameChangeLog();
+            $productLog->product_code     = $request->product_code;
+            $productLog->old_product_name = $stockName;
+            $productLog->new_product_name = $barcodeName;
+            $productLog->user_id          = getAuthUser()->id;
+            $productLog->save();
+
+
+            // dd($productLog); 
+        }
+
+        $stock_tracking->update([
+            'total_qty' => $stock_tracking->total_qty - $request->reduce_qty
         ]);
 
-        try {
+        $detail = new StockTrackingRecord();
+        $detail->stock_tracking_id = $stock_tracking->id;
+        $detail->qty               = $request->reduce_qty;
+        $detail->status            = 'out';
+        $detail->user_id           = getAuthUser()->id;
+        $detail->remark            = $request->remark;
+        $detail->save();
 
-                if ($request->qty < $request->reduce_qty) {
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Stock တွင် ရှိနေသော total qty ထက်ပိုထုပ်ရျ်မရပါ',
-                        'data' => [],
-                    ], 404);
-                }
-            $stock_tracking = StockTracking::where('from_branch', $request->from_branch)
-                ->where('location_name', $request->location_name)
-                ->where('product_code', $request->product_code)
-                ->first();
-            if ($stock_tracking) {
-                $stock_tracking->update(['total_qty' => $stock_tracking->total_qty - $request->reduce_qty]);
-            }
+        return response()->json([
+            'success' => true,
+            'message' => 'Records saved successfully.',
+            'data'    => [
+                'stock_tracking' => $stock_tracking,
+                'detail'         => $detail
+            ]
+        ], 201);
 
-            $detail = new StockTrackingRecord();
-            $detail->stock_tracking_id = $stock_tracking->id;
-            $detail->qty = $request->reduce_qty;
-            $detail->status = 'out';
-            $detail->user_id = getAuthUser()->id;
-            $detail->remark = $request->remark;
-            $detail->save();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Records saved successfully.',
-                'data' => [
-                    'stock_tracking' => $stock_tracking,
-                    'detail' => $detail
-                ]
-            ], 201);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Something went wrong',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Something went wrong',
+            'error'   => $e->getMessage()
+        ], 500);
     }
+}
 
 
  public function getStockPcode($pcode, $branch)
