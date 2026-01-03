@@ -394,11 +394,14 @@ public function statusOutStore(Request $request)
             ], 400);
         }
 
-        $barcodeProduct = DB::connection($connection)
-            ->table('stockcard.vw_searchpricebycat')
-            ->select('barcode_bill_name')
-            ->where('product_code', $request->product_code)
-            ->first();
+     $barcodeProduct = DB::connection($connection)
+        ->table('stockcard.vw_searchpricebycat')
+        ->select('barcode_bill_name')
+        ->where(function ($query) use ($request) {
+            $query->where('barcode_code', $request->product_code);
+                //   ->orWhere('product_code', $request->product_code);
+        })
+        ->first();
 
         if (!$barcodeProduct) {
             return response()->json([
