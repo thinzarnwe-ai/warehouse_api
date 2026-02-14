@@ -394,7 +394,7 @@ public function statusOutStore(Request $request)
             ], 400);
         }
 
-     $barcodeProduct = DB::connection($connection)
+    $barcodeProduct = DB::connection($connection)
         ->table('stockcard.vw_searchpricebycat')
         ->select('barcode_bill_name')
         ->where(function ($query) use ($request) {
