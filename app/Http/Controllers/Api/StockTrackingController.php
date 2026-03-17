@@ -403,25 +403,15 @@ public function statusOutStore(Request $request)
         })
         ->first();
 
-        if (!$barcodeProduct) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Product not found in barcode system',
-            ], 404);
-        }
+         if ($barcodeProduct) {
+               $barcodeName = $barcodeProduct->barcode_bill_name;
+                $stockName   = $stock_tracking->product_name;
+                if ($barcodeName !== $stockName) {
+                // dd($barcodeName,$stockName);
+                    $stock_tracking->update([
+                        'product_name' => $barcodeName
+                    ]);
 
-        $barcodeName = $barcodeProduct->barcode_bill_name;
-        $stockName   = $stock_tracking->product_name;
-        // dd($barcodeName, $stockName);
-
-        if ($barcodeName !== $stockName) {
-
-
-            $stock_tracking->update([
-                'product_name' => $barcodeName
-            ]);
-
-            // dd($stock_tracking);
 
             $productLog = new ProductNameChangeLog();
             $productLog->product_code     = $request->product_code;
@@ -431,7 +421,7 @@ public function statusOutStore(Request $request)
             $productLog->save();
 
 
-            // dd($productLog); 
+        }
         }
 
         $stock_tracking->update([
