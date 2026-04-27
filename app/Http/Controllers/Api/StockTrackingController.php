@@ -147,34 +147,41 @@ public function getPcode($pcode, $branch_id)
         ], 400);
     }
 
-    $query = DB::connection($connection)
-        ->table('stockcard.vw_searchpricebycat')
-        ->select('product_code', 'barcode_code', 'barcode_bill_name', 'unit_rate', 'unit_code');
+    try {
+        $query = DB::connection($connection)
+            ->table('stockcard.vw_searchpricebycat')
+            ->select('product_code', 'barcode_code', 'barcode_bill_name', 'unit_rate', 'unit_code');
 
-    if (is_numeric($pcode)) {
-        $query->where('barcode_code', $pcode);
-    } else {
-        $query->where('barcode_bill_name', 'ILIKE', '%' . $pcode . '%');
+        if (is_numeric($pcode)) {
+            $query->where('barcode_code', $pcode);
+        } else {
+            $query->where('barcode_bill_name', 'ILIKE', '%' . $pcode . '%');
+        }
+
+        $products = $query->limit(10)->get();
+
+        if ($products->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Product not found',
+            ], 404);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $products
+        ]);
+
+    } catch (\Exception $e) {
+        
+        \Log::error('DB Connection Error: ' . $e->getMessage());
+
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Database connection failed',
+            'error' => $e->getMessage(),
+        ], 500);
     }
-
-    
-    $products = $query->limit(10)->get();
-    // dd($products);
-
-  if ($products->isEmpty()) {
-    return response()->json([
-        'status' => 'error',
-        'message' => 'Product not found',
-    ], 404);
-}
-
-return response()->json([
-    'status' => 'success',
-    'data' => [
-        'products' => $products,
-    ]
-]);
-
 }
 
 
