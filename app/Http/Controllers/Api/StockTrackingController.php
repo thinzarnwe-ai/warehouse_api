@@ -1,7 +1,6 @@
 <?php
 
 namespace App\Http\Controllers\Api;
-
 use App\Models\ProductNameChangeLog;
 use Carbon\Carbon;
 use App\Models\Branch;
@@ -9,6 +8,7 @@ use App\Models\Location;
 use App\Models\UserBranch;
 use Illuminate\Http\Request;
 use App\Models\StockTracking;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use App\Models\StockTrackingRecord;
 use Illuminate\Support\Facades\Log;
@@ -38,7 +38,7 @@ class StockTrackingController extends Controller
 
         ]);
     }
-  public function store(Request $request)
+public function store(Request $request)
 {
     $request->validate([
         'location_name' => 'required',
@@ -49,16 +49,47 @@ class StockTrackingController extends Controller
         'from_branch' => 'required',
     ]);
 
+    $authUser = getAuthUser();
+    $rawIdempotencyKey = $request->header('Idempotency-Key');
+    $idempotencyFingerprint = implode('|', [
+        $authUser->id,
+        $request->from_branch,
+        $request->location_name,
+        $request->product_code,
+        $request->product_name,
+        $request->qty,
+        $request->remark,
+    ]);
+    $idempotencyKey = $rawIdempotencyKey ?: hash('sha256', $idempotencyFingerprint);
+    $responseCacheKey = "stock_tracking:store:response:{$idempotencyKey}";
+    $lock = Cache::lock("stock_tracking:store:lock:{$idempotencyKey}", 10);
+
+
+    if (Cache::has($responseCacheKey)) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Duplicate request. This data was already submitted.',
+        ], 409);
+    }
+
+    if (!$lock->get()) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Duplicate request is already being processed.',
+        ], 429);
+    }
+
     try {
- 
+        $responsePayload = DB::transaction(function () use ($request, $authUser) {
         $locationExists = Location::where('location_name', $request->location_name)->exists();
 
         if (!$locationExists) {
-            return response()->json([
+            return [
                 'status' => 'error',
                 'message' => 'သတ်မှတ်ထားသော Location Name မရှိသေးပါ သဖြင့် Location Name သတ်မှတ်ပေးပါရန်လိုအပ်ပါသည်',
                 'data' => [],
-            ], 404);
+                '__http_status' => 404,
+            ];
         }
 
     
@@ -70,7 +101,7 @@ class StockTrackingController extends Controller
         if ($stockTracking) {
             $stockTracking->increment('total_qty', $request->qty);
         } else {
-            $userRole = getAuthUser()->getRoleNames()->first();
+            $userRole = $authUser->getRoleNames()->first();
 
             $stockTracking = StockTracking::create([
                 'product_code'  => $request->product_code,
@@ -86,18 +117,29 @@ class StockTrackingController extends Controller
             'stock_tracking_id' => $stockTracking->id,
             'qty'               => $request->qty,
             'status'            => 'in',
-            'user_id'           => getAuthUser()->id,
+            'user_id'           => $authUser->id,
             'remark'            => $request->remark,
         ]);
 
-        return response()->json([
+        return [
             'success' => true,
             'message' => 'Records saved successfully.',
             'data' => [
                 'stock_tracking' => $stockTracking,
                 'detail' => $detail
-            ]
-        ], 201);
+            ],
+            '__http_status' => 201,
+        ];
+        });
+
+        $httpStatus = $responsePayload['__http_status'] ?? 201;
+        unset($responsePayload['__http_status']);
+
+        if ($httpStatus === 201) {
+            Cache::put($responseCacheKey, true, now()->addMinutes(2));
+        }
+
+        return response()->json($responsePayload, $httpStatus);
 
     } catch (\Exception $e) {
         return response()->json([
@@ -105,8 +147,11 @@ class StockTrackingController extends Controller
             'message' => 'Something went wrong.',
             'error' => $e->getMessage()
         ], 500);
+    } finally {
+        optional($lock)->release();
     }
 }
+
 
 public function getPcode($pcode, $branch_id)
 {
@@ -351,7 +396,38 @@ public function statusOutStore(Request $request)
         'remark'        => 'required',
     ]);
 
+    $authUser = getAuthUser();
+    $rawIdempotencyKey = $request->header('Idempotency-Key');
+    $idempotencyFingerprint = implode('|', [
+        $authUser->id,
+        $request->from_branch,
+        $request->location_name,
+        $request->product_code,
+        $request->product_name,
+        $request->qty,
+        $request->reduce_qty,
+        $request->remark,
+    ]);
+    $idempotencyKey = $rawIdempotencyKey ?: hash('sha256', $idempotencyFingerprint);
+    $responseCacheKey = "stock_tracking:status_out_store:response:{$idempotencyKey}";
+    $lock = Cache::lock("stock_tracking:status_out_store:lock:{$idempotencyKey}", 10);
+
+    if (Cache::has($responseCacheKey)) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Duplicate request. This data was already submitted.',
+        ], 409);
+    }
+
+    if (!$lock->get()) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Duplicate request is already being processed.',
+        ], 429);
+    }
+
     try {
+        $responsePayload = DB::transaction(function () use ($request, $authUser) {
 
         $stock_tracking = StockTracking::where('from_branch', $request->from_branch)
             ->where('location_name', $request->location_name)
@@ -359,18 +435,20 @@ public function statusOutStore(Request $request)
             ->first();
 
         if (!$stock_tracking) {
-            return response()->json([
+            return [
                 'status'  => 'error',
                 'message' => 'Stock not found',
-            ], 404);
+                '__http_status' => 404,
+            ];
         }
 
         if ($request->qty < $request->reduce_qty) {
-            return response()->json([
+            return [
                 'status'  => 'error',
                 'message' => 'Stock တွင် ရှိနေသော total qty ထက်ပိုထုပ်ရျ်မရပါ',
                 'data'    => [],
-            ], 400);
+                '__http_status' => 400,
+            ];
         }
 
         $connection = match ($stock_tracking->from_branch) {
@@ -395,10 +473,11 @@ public function statusOutStore(Request $request)
         };
 
         if (!$connection) {
-            return response()->json([
+            return [
                 'status'  => 'error',
                 'message' => 'Database connection not found',
-            ], 400);
+                '__http_status' => 400,
+            ];
         }
 
     $barcodeProduct = DB::connection($connection)
@@ -424,7 +503,7 @@ public function statusOutStore(Request $request)
             $productLog->product_code     = $request->product_code;
             $productLog->old_product_name = $stockName;
             $productLog->new_product_name = $barcodeName;
-            $productLog->user_id          = getAuthUser()->id;
+            $productLog->user_id          = $authUser->id;
             $productLog->save();
 
 
@@ -439,18 +518,29 @@ public function statusOutStore(Request $request)
         $detail->stock_tracking_id = $stock_tracking->id;
         $detail->qty               = $request->reduce_qty;
         $detail->status            = 'out';
-        $detail->user_id           = getAuthUser()->id;
+        $detail->user_id           = $authUser->id;
         $detail->remark            = $request->remark;
         $detail->save();
 
-        return response()->json([
+        return [
             'success' => true,
             'message' => 'Records saved successfully.',
             'data'    => [
                 'stock_tracking' => $stock_tracking,
                 'detail'         => $detail
-            ]
-        ], 201);
+            ],
+            '__http_status' => 201,
+        ];
+        });
+
+        $httpStatus = $responsePayload['__http_status'] ?? 201;
+        unset($responsePayload['__http_status']);
+
+        if ($httpStatus === 201) {
+            Cache::put($responseCacheKey, true, now()->addMinutes(2));
+        }
+
+        return response()->json($responsePayload, $httpStatus);
 
     } catch (\Exception $e) {
         return response()->json([
@@ -458,6 +548,8 @@ public function statusOutStore(Request $request)
             'message' => 'Something went wrong',
             'error'   => $e->getMessage()
         ], 500);
+    } finally {
+        optional($lock)->release();
     }
 }
 
@@ -588,16 +680,48 @@ public function getStockPname($pname, $branch)
             'from_branch' => 'required',
         ]);
 
+        $authUser = getAuthUser();
+        $rawIdempotencyKey = $request->header('Idempotency-Key');
+        $idempotencyFingerprint = implode('|', [
+            $authUser->id,
+            $request->from_branch,
+            $request->location_name,
+            $request->transfer_location,
+            $request->product_code,
+            $request->product_name,
+            $request->qty,
+            $request->transfer_qty,
+            $request->remark,
+        ]);
+        $idempotencyKey = $rawIdempotencyKey ?: hash('sha256', $idempotencyFingerprint);
+        $responseCacheKey = "stock_tracking:status_transfer_store:response:{$idempotencyKey}";
+        $lock = Cache::lock("stock_tracking:status_transfer_store:lock:{$idempotencyKey}", 10);
+
+        if (Cache::has($responseCacheKey)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Duplicate request. This data was already submitted.',
+            ], 409);
+        }
+
+        if (!$lock->get()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Duplicate request is already being processed.',
+            ], 429);
+        }
+
         try {
-            
+            $responsePayload = DB::transaction(function () use ($request, $authUser) {
                 if ($request->qty < $request->transfer_qty) {
-                    return response()->json([
+                    return [
                         'status' => 'error',
                         'message' => 'Stock တွင် ရှိနေသော total qty ထက်ပိုထုပ်ရျ်မရပါ',
                         'data' => [],
-                    ], 404);
+                        '__http_status' => 404,
+                    ];
                 }
-            $authUserId = getAuthUser()->id;
+            $authUserId = $authUser->id;
             $fromBranch = $request->from_branch;
             $productCode = $request->product_code;
             $transferQty = $request->transfer_qty;
@@ -611,10 +735,11 @@ public function getStockPname($pname, $branch)
                 ->first();
 
             if (!$stockFrom) {
-                return response()->json([
+                return [
                     'success' => false,
                     'message' => 'Original stock record not found.',
-                ], 404);
+                    '__http_status' => 404,
+                ];
             }
 
             $stockFrom->decrement('total_qty', $transferQty);
@@ -641,7 +766,7 @@ public function getStockPname($pname, $branch)
                 $stockTo->increment('total_qty', $transferQty);
             } else {
                 
-                $userRole = getAuthUser()->getRoleNames()->first();
+                $userRole = $authUser->getRoleNames()->first();
                 $stockTo = StockTracking::create([
                     'location_name' => $transferLocation,
                     'from_branch' => $fromBranch,
@@ -664,20 +789,33 @@ public function getStockPname($pname, $branch)
             ]);
             $outRecord->save();
 
-            return response()->json([
+            return [
                 'success' => true,
                 'message' => 'Stock transfer completed successfully.',
                 'data' => [
                     'in_record' => $inRecord,
                     'out_record' => $outRecord,
-                ]
-            ], 201);
+                ],
+                '__http_status' => 201,
+            ];
+        });
+
+        $httpStatus = $responsePayload['__http_status'] ?? 201;
+        unset($responsePayload['__http_status']);
+
+        if ($httpStatus === 201) {
+            Cache::put($responseCacheKey, true, now()->addMinutes(2));
+        }
+
+        return response()->json($responsePayload, $httpStatus);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Something went wrong',
                 'error' => $e->getMessage(),
             ], 500);
+        } finally {
+            optional($lock)->release();
         }
     }
 
