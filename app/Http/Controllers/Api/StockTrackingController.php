@@ -358,6 +358,7 @@ public function getPcode($pcode, $branch_id)
 
         $query = StockTrackingRecord::with('stockTracking')
             ->where('status', 'in')
+            ->whereNull('deleted_at')
             ->whereHas('stockTracking', function ($q) use ($userBranchId) {
                 $q->where('from_branch', $userBranchId);
                 // ->where('status', $userRole);
@@ -637,6 +638,7 @@ public function getStockPname($pname, $branch)
 
         $query = StockTrackingRecord::with('stockTracking')
             ->where('status', 'out')
+            ->whereNull('deleted_at')
             ->whereHas('stockTracking', function ($q) use ($userBranchId) {
                 $q->where('from_branch', $userBranchId);
                 // ->where('status', $userRole);
