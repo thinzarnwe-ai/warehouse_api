@@ -17,6 +17,8 @@ use Psy\Readline\Hoa\Console;
 
 class StockTrackingController extends Controller
 {
+    private const CONNECTION_FAILED_MESSAGE = 'connection ကျနေပါသည် Branch IT နှင့်ဆက်သွယ်ပေးပါ';
+
     public function branch(Request $request)
     {
         $branches = UserBranch::with('branch')
@@ -144,7 +146,7 @@ public function store(Request $request)
     } catch (\Exception $e) {
         return response()->json([
             'success' => false,
-            'message' => 'Something went wrong.',
+            'message' => self::CONNECTION_FAILED_MESSAGE,
             'error' => $e->getMessage()
         ], 500);
     } finally {
@@ -155,6 +157,7 @@ public function store(Request $request)
 
 public function getPcode($pcode, $branch_id)
 {
+    // dd($pcode, $branch_id);
     $branch = Branch::find($branch_id);
 
     if (!$branch) {
@@ -188,7 +191,7 @@ public function getPcode($pcode, $branch_id)
     if (!$connection) {
         return response()->json([
             'status' => 'error',
-            'message' => 'Database connection not found',
+            'message' => self::CONNECTION_FAILED_MESSAGE,
         ], 400);
     }
 
@@ -223,7 +226,7 @@ public function getPcode($pcode, $branch_id)
 
         return response()->json([
             'status' => 'error',
-            'message' => 'Database connection failed',
+            'message' => self::CONNECTION_FAILED_MESSAGE,
             'error' => $e->getMessage(),
         ], 500);
     }
@@ -233,6 +236,8 @@ public function getPcode($pcode, $branch_id)
 
  public function getPname($pname)
 {
+
+
     $productName = DB::connection('pg_master')
         ->table('master_data.master_product')
         ->select('product_code', 'product_name1')
@@ -358,7 +363,6 @@ public function getPcode($pcode, $branch_id)
 
         $query = StockTrackingRecord::with('stockTracking')
             ->where('status', 'in')
-            ->whereNull('deleted_at')
             ->whereHas('stockTracking', function ($q) use ($userBranchId) {
                 $q->where('from_branch', $userBranchId);
                 // ->where('status', $userRole);
@@ -476,7 +480,7 @@ public function statusOutStore(Request $request)
         if (!$connection) {
             return [
                 'status'  => 'error',
-                'message' => 'Database connection not found',
+                'message' => self::CONNECTION_FAILED_MESSAGE,
                 '__http_status' => 400,
             ];
         }
@@ -546,7 +550,7 @@ public function statusOutStore(Request $request)
     } catch (\Exception $e) {
         return response()->json([
             'success' => false,
-            'message' => 'Something went wrong',
+            'message' => self::CONNECTION_FAILED_MESSAGE,
             'error'   => $e->getMessage()
         ], 500);
     } finally {
@@ -638,7 +642,6 @@ public function getStockPname($pname, $branch)
 
         $query = StockTrackingRecord::with('stockTracking')
             ->where('status', 'out')
-            ->whereNull('deleted_at')
             ->whereHas('stockTracking', function ($q) use ($userBranchId) {
                 $q->where('from_branch', $userBranchId);
                 // ->where('status', $userRole);
@@ -813,7 +816,7 @@ public function getStockPname($pname, $branch)
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Something went wrong',
+                'message' => self::CONNECTION_FAILED_MESSAGE,
                 'error' => $e->getMessage(),
             ], 500);
         } finally {
