@@ -133,6 +133,14 @@ class LocationController extends Controller
             $query->whereRaw("(string_to_array(location_name, '_'))[4] = ?", [$request->bay]);
         }
 
+        if ($request->filled('level')) {
+            // Level is always the last segment (warehouse: 5 parts, sale: 6 parts)
+            $query->whereRaw(
+                "(string_to_array(location_name, '_'))[array_length(string_to_array(location_name, '_'), 1)] = ?",
+                [$request->level]
+            );
+        }
+
         if ($roles->contains('Sale')) {
             $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'S'");
         } elseif ($roles->contains('Warehouse')) {
