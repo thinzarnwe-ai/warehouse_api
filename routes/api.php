@@ -36,6 +36,14 @@ Route::middleware(['auth:sanctum'])->group(function (){
     Route::post('logout',[AuthController::class,'logout']);
     Route::put('user/branch',[AuthController::class, 'updateBranch']);
     Route::post('location',[LocationController::class, 'store']);
+    Route::post('location-request',[LocationController::class, 'storeRequest']);
+    Route::get('location-requests',[LocationController::class, 'indexRequests']);
+    Route::get('location-requests/{id}',[LocationController::class, 'showRequest']);
+    Route::post('location-requests/{id}/approve',[LocationController::class, 'approveRequest']);
+    Route::post('location-requests/{id}/reject',[LocationController::class, 'rejectRequest']);
+    Route::get('location-check',[LocationController::class, 'checkExists']);
+    Route::get('notifications',[LocationController::class, 'indexNotifications']);
+    Route::patch('notifications/{id}/read',[LocationController::class, 'markNotificationRead']);
     Route::get('location',[LocationController::class, 'index']);
     Route::get('stock_active',[StockTrackingController::class, 'show']);
     Route::get('show_all_stock',[StockTrackingController::class, 'showAll']);

@@ -443,6 +443,21 @@ return [
             'sslmode' => 'prefer',
         ],
 
+        'cycan_scan' => [
+            'driver' => 'pgsql',
+            'url' => env('DATABASE_URL'),
+            'host' => env('Cycan_Scan_DB_Host', '127.0.0.1'),
+            'port' => env('Cycan_Scan_DB_Port', '5432'),
+            'database' => env('Cycan_Scan_DB_Database', 'Mobile_Count_Test'),
+            'username' => env('Cycan_Scan_DB_Username', 'postgres'),
+            'password' => env('Cycan_Scan_DB_Password', ''),
+            'charset' => 'utf8',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'schema' => 'public',
+            'sslmode' => 'prefer',
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DATABASE_URL'),
