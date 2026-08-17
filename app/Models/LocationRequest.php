@@ -10,6 +10,7 @@ class LocationRequest extends Model
     use HasFactory;
 
     protected $fillable = [
+        'document_id',
         'user_id',
         'branch_id',
         'location_category',
@@ -24,6 +25,11 @@ class LocationRequest extends Model
         'status',
         'remark',
     ];
+
+    public function document()
+    {
+        return $this->belongsTo(LocationRequestDocument::class, 'document_id');
+    }
 
     public function user()
     {

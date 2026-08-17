@@ -21,12 +21,20 @@ class StockTrackingController extends Controller
 
     public function branch(Request $request)
     {
-        $branches = UserBranch::with('branch')
-            ->where('user_id', auth()->id())
-            ->get()
-            ->pluck('branch')
-            ->unique('id')
-            ->values();
+        $authUser = getAuthUser();
+        $isLocationApprover = $authUser && $authUser->emp_id === '000-000167';
+
+        if ($isLocationApprover) {
+            $branches = Branch::orderBy('branch_name')->get();
+        } else {
+            $branches = UserBranch::with('branch')
+                ->where('user_id', auth()->id())
+                ->get()
+                ->pluck('branch')
+                ->filter()
+                ->unique('id')
+                ->values();
+        }
 
         return response()->json([
             'status' => 'success',

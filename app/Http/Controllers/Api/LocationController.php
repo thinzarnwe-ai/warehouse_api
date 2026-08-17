@@ -12,7 +12,9 @@ use App\Models\Branch;
 use App\Models\Location;
 use App\Models\LocationHd;
 use App\Models\LocationRequest;
+use App\Models\LocationRequestDocument;
 use App\Models\LocationRequestNotification;
+use App\Models\StockTracking;
 use App\Models\User;
 use App\Models\UserBranch;
 use Illuminate\Http\Request;
@@ -34,6 +36,23 @@ class LocationController extends Controller
         $user = $user ?? getAuthUser();
 
         return $user && $user->emp_id === self::LOCATION_APPROVER_EMP_ID;
+    }
+
+    public function allBranches()
+    {
+        $branches = Branch::orderBy('branch_name')->get();
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $branches->map(function ($branch) {
+                return [
+                    'id' => $branch->id,
+                    'name' => $branch->branch_name,
+                    'short_name' => $branch->branch_short_name,
+                    'code' => $branch->branch_code,
+                ];
+            })->values(),
+        ]);
     }
 
     public function index()
@@ -83,7 +102,7 @@ class LocationController extends Controller
             'level_id' => 'required|exists:levels,id',
             'location_type' => 'nullable|in:Sale,Warehouse,S,W',
             'side_id' => 'nullable|exists:sides,id',
-            'side' => 'nullable|string|in:F,B,Natural',
+            'side' => 'nullable|string|in:F,B,Natural,None',
         ]);
 
         if ($validate->fails()) {
@@ -99,7 +118,7 @@ class LocationController extends Controller
 
         // Prefer explicit side name from frontend; fallback to side_id lookup
         if ($request->filled('side')) {
-            $side_name = $request->side === 'Natural' ? '' : $request->side;
+            $side_name = in_array($request->side, ['Natural', 'None'], true) ? '' : $request->side;
         } elseif ($request->filled('side_id')) {
             $side_name = Side::findOrFail($request->side_id)?->name ?? '';
         } else {
@@ -152,7 +171,7 @@ class LocationController extends Controller
             'bay_id' => 'required|exists:bays,id',
             'level_id' => 'required|exists:levels,id',
             'location_type' => 'nullable|in:Sale,Warehouse,S,W',
-            'side' => 'nullable|string|in:F,B,Natural',
+            'side' => 'nullable|string|in:F,B,Natural,None',
         ]);
 
         if ($validate->fails()) {
@@ -167,7 +186,7 @@ class LocationController extends Controller
 
         $side_name = '';
         if ($request->filled('side')) {
-            $side_name = $request->side === 'Natural' ? '' : $request->side;
+            $side_name = in_array($request->side, ['Natural', 'None'], true) ? '' : $request->side;
         }
 
         $locationType = $request->input('location_type');
@@ -239,17 +258,619 @@ class LocationController extends Controller
         ]);
     }
 
-    private function buildLocationName($branch, $zone, $row, $bay, $level, $isSale, $side_name)
+    public function storeDocument(Request $request)
     {
-        if ($isSale) {
-            if ($side_name !== '') {
-                return "{$branch->branch_short_name}S_{$zone->name}_{$row->name}_{$side_name}_{$bay->name}_{$level->name}";
-            }
+        $validate = Validator::make($request->all(), [
+            'lines' => 'required|array|min:1',
+            'lines.*.branch_id' => 'required|exists:branches,id',
+            'lines.*.location_category' => 'required|string|max:255',
+            'lines.*.zone_id' => 'required_without:lines.*.zone|nullable|exists:zones,id',
+            'lines.*.zone' => 'required_without:lines.*.zone_id|nullable|string|max:20',
+            'lines.*.row_id' => 'required|exists:rows,id',
+            'lines.*.bay_id' => 'required|exists:bays,id',
+            'lines.*.level_id' => 'required|exists:levels,id',
+            'lines.*.location_type' => 'nullable|in:Sale,Warehouse,S,W',
+            'lines.*.side' => 'nullable|string|in:F,B,Natural,None',
+            'lines.*.location_name' => 'nullable|string|max:255',
+            'lines.*.branch_short_name' => 'nullable|string|max:20',
+        ]);
 
-            return "{$branch->branch_short_name}S_{$zone->name}_{$row->name}_{$bay->name}_{$level->name}";
+        if ($validate->fails()) {
+            return response()->json(['status' => 'error', 'message' => $validate->errors()], 422);
         }
 
-        return "{$branch->branch_short_name}W_{$zone->name}_{$row->name}_{$bay->name}_{$level->name}";
+        try {
+            $result = $this->persistLocationDocument($request);
+        } catch (\Illuminate\Database\QueryException $e) {
+            Log::error('Location document store failed', ['error' => $e->getMessage()]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to save location request. Please try again.',
+            ], 500);
+        } catch (\Throwable $e) {
+            Log::error('Location document store failed', ['error' => $e->getMessage()]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to save location request. Please try again.',
+            ], 500);
+        }
+
+        return $result;
+    }
+
+    private function persistLocationDocument(Request $request)
+    {
+        $authUser = getAuthUser();
+        $headerBranch = Branch::find($authUser->branch_id);
+        $headerShort = $headerBranch?->branch_short_name ?: 'XX';
+
+        $preparedLines = [];
+        $seenNames = [];
+
+        foreach ($request->lines as $index => $line) {
+            $branch = Branch::findOrFail($line['branch_id']);
+            $zone = $this->resolveZoneFromLine($line);
+            $row = Row::findOrFail($line['row_id']);
+            $bay = Bay::findOrFail($line['bay_id']);
+            $level = Level::findOrFail($line['level_id']);
+
+            $side_name = '';
+            if (!empty($line['side']) && !in_array($line['side'], ['Natural', 'None'], true)) {
+                $side_name = $line['side'];
+            }
+
+            $locationType = $line['location_type'] ?? null;
+            $isSale = in_array($locationType, ['Sale', 'S'], true)
+                ? true
+                : (in_array($locationType, ['Warehouse', 'W'], true)
+                    ? false
+                    : $authUser->getRoleNames()->contains('Sale'));
+
+            $shortName = $line['branch_short_name'] ?? $branch->branch_short_name;
+            $locationName = trim((string) ($line['location_name'] ?? ''));
+            if ($locationName === '' || str_contains($locationName, '?')) {
+                $locationName = $this->buildLocationName(
+                    $branch,
+                    $zone,
+                    $row,
+                    $bay,
+                    $level,
+                    $isSale,
+                    $side_name,
+                    $shortName
+                );
+            }
+
+            if (isset($seenNames[$locationName])) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Duplicate location code in form: {$locationName}",
+                    'line' => $index + 1,
+                ], 422);
+            }
+            $seenNames[$locationName] = true;
+
+            if (Location::where('location_name', $locationName)->exists()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Location code already exists in locations: {$locationName}",
+                    'line' => $index + 1,
+                    'duplicate_in' => 'locations',
+                ], 409);
+            }
+
+            if (
+                LocationRequest::where('location_name', $locationName)
+                    ->where('status', 'request')
+                    ->exists()
+            ) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Pending request already exists for: {$locationName}",
+                    'line' => $index + 1,
+                    'duplicate_in' => 'location_requests',
+                ], 409);
+            }
+
+            $preparedLines[] = [
+                'branch_id' => $branch->id,
+                'location_category' => $line['location_category'],
+                'location_type' => $isSale ? 'S' : 'W',
+                'zone_id' => $zone->id,
+                'row_id' => $row->id,
+                'bay_id' => $bay->id,
+                'level_id' => $level->id,
+                'side' => $line['side'] ?? null,
+                'branch_short_name' => $shortName,
+                'location_name' => $locationName,
+            ];
+        }
+
+        $document = DB::transaction(function () use ($preparedLines, $authUser, $headerBranch, $headerShort) {
+            $documentNumber = $this->generateDocumentNumber($headerShort);
+
+            $document = LocationRequestDocument::create([
+                'document_number' => $documentNumber,
+                'user_id' => $authUser->id,
+                'branch_id' => $headerBranch?->id,
+                'branch_short_name' => $headerShort,
+                'status' => 'request',
+            ]);
+
+            foreach ($preparedLines as $line) {
+                LocationRequest::create(array_merge($line, [
+                    'document_id' => $document->id,
+                    'user_id' => $authUser->id,
+                    'status' => 'request',
+                ]));
+            }
+
+            $approver = User::where('emp_id', self::LOCATION_APPROVER_EMP_ID)->first();
+            if ($approver) {
+                LocationRequestNotification::create([
+                    'document_id' => $document->id,
+                    'location_request_id' => null,
+                    'user_id' => $approver->id,
+                    'message' => "New location request: {$documentNumber}",
+                ]);
+            }
+
+            return $document->load(['lines.branch', 'user:id,name,emp_id']);
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Location request document submitted successfully!',
+            'data' => $document,
+        ]);
+    }
+
+    private function generateDocumentNumber(string $branchShortName): string
+    {
+        $date = now()->format('Ymd');
+        $prefix = 'LR' . $branchShortName . $date . '-';
+
+        $latest = LocationRequestDocument::where('document_number', 'like', $prefix . '%')
+            ->orderByDesc('document_number')
+            ->lockForUpdate()
+            ->value('document_number');
+
+        $seq = 1;
+        if ($latest && preg_match('/-(\d+)$/', $latest, $m)) {
+            $seq = ((int) $m[1]) + 1;
+        }
+
+        return $prefix . str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+    }
+
+    public function indexDocuments(Request $request)
+    {
+        $query = LocationRequestDocument::with([
+            'user:id,name,emp_id',
+            'branch:id,branch_name,branch_short_name',
+        ])
+            ->withCount('lines')
+            ->orderByDesc('created_at');
+
+        if (!$this->isLocationApprover()) {
+            $user = getAuthUser();
+            $query->where(function ($q) use ($user) {
+                $q->where('user_id', $user->id)
+                    ->orWhereHas('lines', function ($lineQuery) use ($user) {
+                        $lineQuery->where('branch_id', $user->branch_id);
+                    });
+            });
+        }
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        $documents = $query->paginate(20);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $documents,
+        ]);
+    }
+
+    public function showDocument($id)
+    {
+        $query = LocationRequestDocument::with([
+            'user:id,name,emp_id',
+            'branch:id,branch_name,branch_short_name',
+            'lines.user:id,name,emp_id',
+            'lines.branch:id,branch_name,branch_short_name',
+            'lines.zone:id,name',
+            'lines.row:id,name',
+            'lines.bay:id,name',
+            'lines.level:id,name',
+        ]);
+
+        if (!$this->isLocationApprover()) {
+            $user = getAuthUser();
+            $query->where(function ($q) use ($user) {
+                $q->where('user_id', $user->id)
+                    ->orWhereHas('lines', function ($lineQuery) use ($user) {
+                        $lineQuery->where('branch_id', $user->branch_id);
+                    });
+            });
+        }
+
+        $document = $query->findOrFail($id);
+
+        return response()->json([
+            'status' => 'success',
+            'data' => $document,
+        ]);
+    }
+
+    public function destroyDocumentLine($id, $lineId)
+    {
+        $authUser = getAuthUser();
+        $document = LocationRequestDocument::findOrFail($id);
+
+        if (!$this->isLocationApprover($authUser)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You are not authorized to delete lines on this document.',
+            ], 403);
+        }
+
+        if ($document->status !== 'request') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Only pending documents can be edited.',
+            ], 409);
+        }
+
+        $line = LocationRequest::where('document_id', $document->id)
+            ->where('id', $lineId)
+            ->firstOrFail();
+
+        $remainingCount = 0;
+        $documentDeleted = false;
+
+        DB::transaction(function () use ($document, $line, &$remainingCount, &$documentDeleted) {
+            LocationRequestNotification::where('location_request_id', $line->id)->delete();
+            $line->delete();
+
+            $remainingCount = LocationRequest::where('document_id', $document->id)->count();
+
+            if ($remainingCount === 0) {
+                LocationRequestNotification::where('document_id', $document->id)->delete();
+                $document->delete();
+                $documentDeleted = true;
+            }
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $documentDeleted
+                ? 'Line deleted. Document removed because it had no remaining lines.'
+                : 'Line deleted successfully.',
+            'data' => [
+                'document_deleted' => $documentDeleted,
+                'remaining_lines' => $remainingCount,
+            ],
+        ]);
+    }
+
+    public function updateDocumentLine(Request $request, $id, $lineId)
+    {
+        if (!$this->isLocationApprover()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You are not authorized to edit lines on this document.',
+            ], 403);
+        }
+
+        $document = LocationRequestDocument::findOrFail($id);
+        if ($document->status !== 'request') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Only pending documents can be edited.',
+            ], 409);
+        }
+
+        $line = LocationRequest::where('document_id', $document->id)
+            ->where('id', $lineId)
+            ->firstOrFail();
+
+        $validate = Validator::make($request->all(), [
+            'branch_id' => 'required|exists:branches,id',
+            'location_category' => 'required|string|max:255',
+            'zone_id' => 'required_without:zone|nullable|exists:zones,id',
+            'zone' => 'required_without:zone_id|nullable|string|max:20',
+            'row_id' => 'required|exists:rows,id',
+            'bay_id' => 'required|exists:bays,id',
+            'level_id' => 'required|exists:levels,id',
+            'location_type' => 'nullable|in:Sale,Warehouse,S,W',
+            'side' => 'nullable|string|in:F,B,Natural,None',
+            'branch_short_name' => 'nullable|string|max:20',
+        ]);
+
+        if ($validate->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Please complete all required fields.',
+            ], 422);
+        }
+
+        try {
+            $branch = Branch::findOrFail($request->branch_id);
+            $zone = $this->resolveZoneFromLine($request->all());
+            $row = Row::findOrFail($request->row_id);
+            $bay = Bay::findOrFail($request->bay_id);
+            $level = Level::findOrFail($request->level_id);
+
+            $sideName = '';
+            if ($request->filled('side') && !in_array($request->side, ['Natural', 'None'], true)) {
+                $sideName = $request->side;
+            }
+
+            $locationType = $request->input('location_type');
+            $isSale = in_array($locationType, ['Sale', 'S'], true)
+                ? true
+                : (in_array($locationType, ['Warehouse', 'W'], true)
+                    ? false
+                    : ($request->location_category !== 'RG_WAREHOUSE'));
+
+            $shortName = $request->branch_short_name ?: $branch->branch_short_name;
+            $locationName = $this->buildLocationName(
+                $branch,
+                $zone,
+                $row,
+                $bay,
+                $level,
+                $isSale,
+                $sideName,
+                $shortName
+            );
+
+            $duplicate = Location::where('location_name', $locationName)->exists()
+                || LocationRequest::where('location_name', $locationName)
+                    ->where('status', 'request')
+                    ->where('id', '!=', $line->id)
+                    ->exists();
+
+            if ($duplicate) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Location code already exists: {$locationName}",
+                    'duplicate_in' => 'locations',
+                ], 409);
+            }
+
+            $line->update([
+                'branch_id' => $branch->id,
+                'location_category' => $request->location_category,
+                'location_type' => $isSale ? 'S' : 'W',
+                'zone_id' => $zone->id,
+                'row_id' => $row->id,
+                'bay_id' => $bay->id,
+                'level_id' => $level->id,
+                'side' => $request->side,
+                'branch_short_name' => $shortName,
+                'location_name' => $locationName,
+            ]);
+        } catch (\Illuminate\Database\QueryException $e) {
+            Log::error('Location line update failed', ['error' => $e->getMessage()]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to update location line. Please try again.',
+            ], 500);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Line updated successfully.',
+            'data' => $line->fresh([
+                'branch:id,branch_name,branch_short_name',
+                'zone:id,name',
+                'row:id,name',
+                'bay:id,name',
+                'level:id,name',
+            ]),
+        ]);
+    }
+
+    public function approveDocument($id)
+    {
+        if (!$this->isLocationApprover()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You are not authorized to approve location requests.',
+            ], 403);
+        }
+
+        $document = LocationRequestDocument::with('lines')->findOrFail($id);
+
+        if ($document->status !== 'request') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'This document has already been processed.',
+            ], 409);
+        }
+
+        $lines = $document->lines()->where('status', 'request')->get();
+        if ($lines->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No pending lines found on this document.',
+            ], 409);
+        }
+
+        foreach ($lines as $line) {
+            if (Location::where('location_name', $line->location_name)->exists()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Location already exists: {$line->location_name}",
+                ], 409);
+            }
+
+            $branch = Branch::findOrFail($line->branch_id);
+            if (
+                LocationHd::where('location_code', $line->location_name)
+                    ->where('branch_code', $branch->branch_code)
+                    ->exists()
+            ) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => "Location already exists in location_hd: {$line->location_name}",
+                ], 409);
+            }
+        }
+
+        $approvedAt = now();
+        $createdHdIds = [];
+
+        try {
+            foreach ($lines as $line) {
+                $branch = Branch::findOrFail($line->branch_id);
+                $createdHdIds[] = $this->insertLocationHd($line, $branch->branch_code, $approvedAt);
+            }
+
+            DB::transaction(function () use ($document, $lines) {
+                foreach ($lines as $line) {
+                    Location::create([
+                        'location_name' => $line->location_name,
+                        'branch_id' => $line->branch_id,
+                    ]);
+                    $line->update(['status' => 'completed']);
+                }
+
+                $document->update(['status' => 'completed']);
+
+                LocationRequestNotification::where('document_id', $document->id)
+                    ->whereNull('read_at')
+                    ->update(['read_at' => now()]);
+            });
+        } catch (\Throwable $e) {
+            if (!empty($createdHdIds)) {
+                LocationHd::whereIn('location_id', $createdHdIds)->delete();
+            }
+
+            Log::error('Location document approve failed', [
+                'document_id' => $document->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to approve location document.',
+            ], 500);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Location document approved successfully.',
+        ]);
+    }
+
+    public function rejectDocument(Request $request, $id)
+    {
+        if (!$this->isLocationApprover()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You are not authorized to reject location requests.',
+            ], 403);
+        }
+
+        $validate = Validator::make($request->all(), [
+            'remark' => 'required|string|max:1000',
+        ]);
+
+        if ($validate->fails()) {
+            return response()->json(['status' => 'error', 'message' => $validate->errors()]);
+        }
+
+        $document = LocationRequestDocument::with('lines')->findOrFail($id);
+
+        if ($document->status !== 'request') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'This document has already been processed.',
+            ], 409);
+        }
+
+        DB::transaction(function () use ($document, $request) {
+            $document->update([
+                'status' => 'cancel',
+                'remark' => $request->remark,
+            ]);
+
+            LocationRequest::where('document_id', $document->id)
+                ->where('status', 'request')
+                ->update([
+                    'status' => 'cancel',
+                    'remark' => $request->remark,
+                ]);
+
+            LocationRequestNotification::where('document_id', $document->id)
+                ->whereNull('read_at')
+                ->update(['read_at' => now()]);
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Location document rejected.',
+        ]);
+    }
+
+    private function resolveZoneFromLine(array $line): Zone
+    {
+        $name = strtoupper(trim((string) ($line['zone'] ?? '')));
+        if ($name !== '' && $name !== '?') {
+            $zone = Zone::whereRaw('upper(name) = ?', [$name])->first();
+            if ($zone) {
+                return $zone;
+            }
+
+            $this->syncPostgresIdSequence('zones');
+
+            return Zone::create(['name' => $name]);
+        }
+
+        return Zone::findOrFail($line['zone_id']);
+    }
+
+    private function syncPostgresIdSequence(string $table): void
+    {
+        $allowed = ['zones' => 'zones'];
+        if (!isset($allowed[$table])) {
+            return;
+        }
+
+        $safe = $allowed[$table];
+
+        try {
+            DB::statement(
+                "SELECT setval(pg_get_serial_sequence('{$safe}', 'id'), COALESCE((SELECT MAX(id) FROM {$safe}), 1))"
+            );
+        } catch (\Throwable $e) {
+            Log::warning('Could not sync ID sequence', [
+                'table' => $table,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function buildLocationName($branch, $zone, $row, $bay, $level, $isSale, $side_name, $shortName = null)
+    {
+        $short = $shortName ?: $branch->branch_short_name;
+        if ($isSale) {
+            if ($side_name !== '') {
+                return "{$short}S_{$zone->name}_{$row->name}_{$side_name}_{$bay->name}_{$level->name}";
+            }
+
+            return "{$short}S_{$zone->name}_{$row->name}_{$bay->name}_{$level->name}";
+        }
+
+        return "{$short}W_{$zone->name}_{$row->name}_{$bay->name}_{$level->name}";
     }
 
     public function checkExists(Request $request)
@@ -491,12 +1112,21 @@ class LocationController extends Controller
     public function indexNotifications()
     {
         $notifications = LocationRequestNotification::with([
-            'locationRequest:id,user_id,location_name,status,branch_id',
+            'document:id,document_number,status,user_id',
+            'document.user:id,name,emp_id',
+            'locationRequest:id,user_id,location_name,status,branch_id,document_id',
             'locationRequest.user:id,name,emp_id',
         ])
             ->where('user_id', auth()->id())
-            ->whereHas('locationRequest', function ($query) {
-                $query->where('status', 'request');
+            ->where(function ($q) {
+                $q->whereHas('document', function ($doc) {
+                    $doc->where('status', 'request');
+                })->orWhere(function ($legacy) {
+                    $legacy->whereNull('document_id')
+                        ->whereHas('locationRequest', function ($req) {
+                            $req->where('status', 'request');
+                        });
+                });
             })
             ->orderByDesc('created_at')
             ->limit(20)
@@ -527,10 +1157,20 @@ class LocationController extends Controller
     {
 
         // dd(getAuthUser()->branch_id);
-        $userBranchIds = getAuthUser()->branch_id;
-        $roles = getAuthUser()->getRoleNames();
+        $authUser = getAuthUser();
+        $userBranchIds = $authUser->branch_id;
+        $roles = $authUser->getRoleNames();
+        $isLocationApprover = $authUser->emp_id === self::LOCATION_APPROVER_EMP_ID;
 
-        $query = Location::where('branch_id', $userBranchIds);
+        if ($isLocationApprover && $request->filled('branch_id')) {
+            if ($request->branch_id === 'all') {
+                $query = Location::query();
+            } else {
+                $query = Location::where('branch_id', $request->branch_id);
+            }
+        } else {
+            $query = Location::where('branch_id', $userBranchIds);
+        }
 
         // dd($query->get());
         if ($request->filled('zone')) {
@@ -568,8 +1208,8 @@ class LocationController extends Controller
             }
         } elseif (
             $roles->contains('Branch Manager') ||
-            $roles->contains('Operation Analystis')
-
+            $roles->contains('Operation Analystis') ||
+            $isLocationApprover
         ) {
         } else {
 
@@ -584,6 +1224,55 @@ class LocationController extends Controller
         return response()->json([
             'status' => 'success',
             'data' => $locations
+        ]);
+    }
+
+    public function destroy($id)
+    {
+        if (!$this->isLocationApprover()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You are not authorized to delete locations.',
+            ], 403);
+        }
+
+        $location = Location::findOrFail($id);
+
+        $stockUsages = StockTracking::where('location_name', $location->location_name)
+            ->select('id', 'product_code', 'product_name', 'total_qty')
+            ->limit(5)
+            ->get();
+
+        if ($stockUsages->isNotEmpty()) {
+            $productCodes = $stockUsages->pluck('product_code')->filter()->unique()->values()->all();
+            $moreCount = StockTracking::where('location_name', $location->location_name)->count();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Cannot delete this location because it is connected with product code(s) in stock trackings.',
+                'linked_products' => $productCodes,
+                'linked_count' => $moreCount,
+            ], 409);
+        }
+
+        try {
+            LocationHd::where('location_code', $location->location_name)->delete();
+            $location->delete();
+        } catch (\Throwable $e) {
+            Log::error('Location delete failed', [
+                'location_id' => $location->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to delete location.',
+            ], 500);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Location deleted successfully.',
         ]);
     }
 }

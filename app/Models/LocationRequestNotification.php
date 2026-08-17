@@ -10,6 +10,7 @@ class LocationRequestNotification extends Model
     use HasFactory;
 
     protected $fillable = [
+        'document_id',
         'location_request_id',
         'user_id',
         'message',
@@ -19,6 +20,11 @@ class LocationRequestNotification extends Model
     protected $casts = [
         'read_at' => 'datetime',
     ];
+
+    public function document()
+    {
+        return $this->belongsTo(LocationRequestDocument::class, 'document_id');
+    }
 
     public function locationRequest()
     {
