@@ -1273,6 +1273,13 @@ class LocationController extends Controller
             );
         }
 
+        if ($request->filled('side')) {
+            $query->whereRaw(
+                "array_length(string_to_array(location_name, '_'), 1) = 6 AND (string_to_array(location_name, '_'))[4] = ?",
+                [strtoupper($request->side)]
+            );
+        }
+
         if ($roles->contains('Sale')) {
             $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'S'");
         } elseif ($roles->contains('Warehouse')) {
