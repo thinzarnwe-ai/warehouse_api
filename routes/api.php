@@ -49,12 +49,14 @@ Route::middleware(['auth:sanctum'])->group(function (){
     Route::post('location-requests/{id}/approve',[LocationController::class, 'approveRequest']);
     Route::post('location-requests/{id}/reject',[LocationController::class, 'rejectRequest']);
     Route::get('location-check',[LocationController::class, 'checkExists']);
+    Route::post('location-check-bulk',[LocationController::class, 'bulkCheckExists']);
     Route::get('notifications',[LocationController::class, 'indexNotifications']);
     Route::patch('notifications/{id}/read',[LocationController::class, 'markNotificationRead']);
     Route::get('location',[LocationController::class, 'index']);
     Route::get('stock_active',[StockTrackingController::class, 'show']);
     Route::get('show_all_stock',[StockTrackingController::class, 'showAll']);
     Route::get('locations',[LocationController::class,'showAll']);
+    Route::post('locations/bulk-delete',[LocationController::class,'destroyMany']);
     Route::delete('locations/{id}',[LocationController::class,'destroy']);
     Route::post('stock_tracking_in',[StockTrackingController::class, 'store']);
     Route::get('stock_tracking_in',[StockTrackingController::class, 'stock_in_show']);

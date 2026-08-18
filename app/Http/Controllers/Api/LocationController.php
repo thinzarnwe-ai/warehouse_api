@@ -464,8 +464,36 @@ class LocationController extends Controller
             });
         }
 
+        if ($this->isLocationApprover() && $request->filled('branch_id')) {
+            $branchId = $request->branch_id;
+            if ($branchId !== 'all') {
+                $query->where('branch_id', $branchId);
+            }
+        }
+
         if ($request->filled('status')) {
             $query->where('status', $request->status);
+        }
+
+        if ($request->filled('search')) {
+            $search = trim($request->search);
+            if ($search !== '') {
+                $query->where(function ($q) use ($search) {
+                    $q->where('document_number', 'ILIKE', "%{$search}%")
+                        ->orWhereHas('user', function ($userQuery) use ($search) {
+                            $userQuery->where('name', 'ILIKE', "%{$search}%")
+                                ->orWhere('emp_id', 'ILIKE', "%{$search}%");
+                        });
+                });
+            }
+        }
+
+        if ($request->filled('from_date')) {
+            $query->whereDate('created_at', '>=', $request->from_date);
+        }
+
+        if ($request->filled('to_date')) {
+            $query->whereDate('created_at', '<=', Carbon::parse($request->to_date)->endOfDay());
         }
 
         $documents = $query->paginate(20);
@@ -897,6 +925,57 @@ class LocationController extends Controller
         ]);
     }
 
+    public function bulkCheckExists(Request $request)
+    {
+        $validate = Validator::make($request->all(), [
+            'location_names' => 'required|array|min:1',
+            'location_names.*' => 'required|string|max:255',
+        ]);
+
+        if ($validate->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $validate->errors(),
+            ], 422);
+        }
+
+        $names = collect($request->input('location_names', []))
+            ->filter(fn ($n) => is_string($n) && trim($n) !== '')
+            ->map(fn ($n) => trim($n))
+            ->unique()
+            ->values();
+
+        if ($names->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No location names provided.',
+            ], 422);
+        }
+
+        $inLocations = Location::whereIn('location_name', $names)
+            ->pluck('location_name')
+            ->unique()
+            ->values();
+
+        $inRequests = LocationRequest::whereIn('location_name', $names)
+            ->where('status', 'request')
+            ->pluck('location_name')
+            ->unique()
+            ->values();
+
+        $exists = $inLocations
+            ->merge($inRequests)
+            ->unique()
+            ->values();
+
+        return response()->json([
+            'status' => 'success',
+            'exists' => $exists,
+            'in_locations' => $inLocations,
+            'in_requests' => $inRequests,
+        ]);
+    }
+
     public function indexRequests(Request $request)
     {
         $userBranchIds = getAuthUser()->branch_id;
@@ -1273,6 +1352,96 @@ class LocationController extends Controller
         return response()->json([
             'status' => 'success',
             'message' => 'Location deleted successfully.',
+        ]);
+    }
+
+    public function destroyMany(Request $request)
+    {
+        if (!$this->isLocationApprover()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You are not authorized to delete locations.',
+            ], 403);
+        }
+
+        $ids = collect($request->input('ids', []))
+            ->filter(fn ($id) => is_numeric($id))
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No locations selected.',
+            ], 422);
+        }
+
+        $locations = Location::whereIn('id', $ids)->get();
+        $deleted = [];
+        $blocked = [];
+
+        foreach ($locations as $location) {
+            $stockUsages = StockTracking::where('location_name', $location->location_name)
+                ->select('product_code')
+                ->limit(5)
+                ->get();
+
+            if ($stockUsages->isNotEmpty()) {
+                $blocked[] = [
+                    'id' => $location->id,
+                    'location_name' => $location->location_name,
+                    'linked_products' => $stockUsages->pluck('product_code')->filter()->unique()->values()->all(),
+                    'linked_count' => StockTracking::where('location_name', $location->location_name)->count(),
+                ];
+                continue;
+            }
+
+            try {
+                LocationHd::where('location_code', $location->location_name)->delete();
+                $location->delete();
+                $deleted[] = $location->location_name;
+            } catch (\Throwable $e) {
+                Log::error('Location bulk delete failed', [
+                    'location_id' => $location->id,
+                    'error' => $e->getMessage(),
+                ]);
+                $blocked[] = [
+                    'id' => $location->id,
+                    'location_name' => $location->location_name,
+                    'linked_products' => [],
+                    'linked_count' => 0,
+                    'message' => 'Failed to delete location.',
+                ];
+            }
+        }
+
+        $deletedCount = count($deleted);
+        $blockedCount = count($blocked);
+
+        if ($deletedCount === 0 && $blockedCount > 0) {
+            $firstBlocked = $blocked[0];
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Cannot delete the selected locations because they are connected with product code(s).',
+                'deleted_count' => 0,
+                'blocked_count' => $blockedCount,
+                'blocked' => $blocked,
+                'locationName' => $firstBlocked['location_name'] ?? '',
+                'linked_products' => $firstBlocked['linked_products'] ?? [],
+                'linked_count' => $firstBlocked['linked_count'] ?? 0,
+            ], 409);
+        }
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $blockedCount > 0
+                ? "{$deletedCount} location(s) deleted. {$blockedCount} skipped because they have stock."
+                : "{$deletedCount} location(s) deleted successfully.",
+            'deleted_count' => $deletedCount,
+            'blocked_count' => $blockedCount,
+            'blocked' => $blocked,
         ]);
     }
 }
