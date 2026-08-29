@@ -1302,7 +1302,15 @@ class LocationController extends Controller
         }
 
         if ($request->filled('bay')) {
-            $query->whereRaw("(string_to_array(location_name, '_'))[4] = ?", [$request->bay]);
+            $bay = $request->bay;
+            // Warehouse names have 5 segments (bay at [4]); Sale names have 6 (side at [4], bay at [5])
+            $query->where(function ($q) use ($bay) {
+                $q->whereRaw(
+                    "((array_length(string_to_array(location_name, '_'), 1) = 5 AND (string_to_array(location_name, '_'))[4] = ?)
+                      OR (array_length(string_to_array(location_name, '_'), 1) = 6 AND (string_to_array(location_name, '_'))[5] = ?))",
+                    [$bay, $bay]
+                );
+            });
         }
 
         if ($request->filled('level')) {
