@@ -17,6 +17,7 @@ class PermissionSeeder extends Seeder
             'user-create',
             'user-edit',
             'user-delete',
+            'request-location-list',
         ];
 
            foreach ($permissions as $permission) {

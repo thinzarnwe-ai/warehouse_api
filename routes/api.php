@@ -28,6 +28,7 @@ Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
      return response()->json([
         'user' => $user,
         'roles' => $user->getRoleNames(),
+        'permissions' => $user->getAllPermissions()->pluck('name')->values(),
     ]);
 });
 Route::post('/login', [AuthController::class, 'login']);
@@ -37,19 +38,24 @@ Route::middleware(['auth:sanctum'])->group(function (){
     Route::put('user/branch',[AuthController::class, 'updateBranch']);
     Route::post('location',[LocationController::class, 'store']);
     Route::post('location-request',[LocationController::class, 'storeRequest']);
-    Route::post('location-request-documents',[LocationController::class, 'storeDocument']);
-    Route::get('location-request-documents',[LocationController::class, 'indexDocuments']);
-    Route::get('location-request-documents/{id}',[LocationController::class, 'showDocument']);
-    Route::delete('location-request-documents/{id}/lines/{lineId}',[LocationController::class, 'destroyDocumentLine']);
-    Route::put('location-request-documents/{id}/lines/{lineId}',[LocationController::class, 'updateDocumentLine']);
-    Route::post('location-request-documents/{id}/approve',[LocationController::class, 'approveDocument']);
-    Route::post('location-request-documents/{id}/reject',[LocationController::class, 'rejectDocument']);
-    Route::get('location-requests',[LocationController::class, 'indexRequests']);
-    Route::get('location-requests/{id}',[LocationController::class, 'showRequest']);
-    Route::post('location-requests/{id}/approve',[LocationController::class, 'approveRequest']);
-    Route::post('location-requests/{id}/reject',[LocationController::class, 'rejectRequest']);
+
+    Route::middleware(['permission:request-location-list'])->group(function () {
+        Route::post('location-request-documents',[LocationController::class, 'storeDocument']);
+        Route::get('location-request-documents',[LocationController::class, 'indexDocuments']);
+        Route::get('location-request-documents/{id}',[LocationController::class, 'showDocument']);
+        Route::delete('location-request-documents/{id}/lines/{lineId}',[LocationController::class, 'destroyDocumentLine']);
+        Route::put('location-request-documents/{id}/lines/{lineId}',[LocationController::class, 'updateDocumentLine']);
+        Route::post('location-request-documents/{id}/approve',[LocationController::class, 'approveDocument']);
+        Route::post('location-request-documents/{id}/reject',[LocationController::class, 'rejectDocument']);
+        Route::get('location-requests',[LocationController::class, 'indexRequests']);
+        Route::get('location-requests/{id}',[LocationController::class, 'showRequest']);
+        Route::post('location-requests/{id}/approve',[LocationController::class, 'approveRequest']);
+        Route::post('location-requests/{id}/reject',[LocationController::class, 'rejectRequest']);
+        Route::post('location-check-bulk',[LocationController::class, 'bulkCheckExists']);
+        Route::get('location-import-template',[LocationController::class, 'downloadImportTemplate']);
+    });
+
     Route::get('location-check',[LocationController::class, 'checkExists']);
-    Route::post('location-check-bulk',[LocationController::class, 'bulkCheckExists']);
     Route::get('notifications',[LocationController::class, 'indexNotifications']);
     Route::patch('notifications/{id}/read',[LocationController::class, 'markNotificationRead']);
     Route::get('location',[LocationController::class, 'index']);
@@ -62,7 +68,6 @@ Route::middleware(['auth:sanctum'])->group(function (){
     Route::get('stock_tracking_in',[StockTrackingController::class, 'stock_in_show']);
     Route::get('user-branch',[StockTrackingController::class, 'branch']);
     Route::get('branches',[LocationController::class, 'allBranches']);
-    Route::get('location-import-template',[LocationController::class, 'downloadImportTemplate']);
     Route::get('get-product/{pcode}/{branch}', [StockTrackingController::class, 'getPcode']);
     Route::get('product_name/{pname}', [StockTrackingController::class,'getPname']);
     Route::get('product/{pcode}/{branch}',[StockTrackingController::class,'getStockPcode']);
