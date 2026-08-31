@@ -26,6 +26,8 @@ use App\Http\Resources\ZoneResource;
 use App\Http\Resources\LevelResource;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\LocationImportTemplateExport;
 
 class LocationController extends Controller
 {
@@ -53,6 +55,31 @@ class LocationController extends Controller
                 ];
             })->values(),
         ]);
+    }
+
+    public function downloadImportTemplate(Request $request)
+    {
+        $branch = null;
+
+        if ($request->filled('branch_id')) {
+            $branch = Branch::find($request->input('branch_id'));
+        }
+
+        if (! $branch) {
+            $branch = Branch::orderBy('branch_name')->first();
+        }
+
+        if (! $branch) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'No branches found.',
+            ], 404);
+        }
+
+        return Excel::download(
+            new LocationImportTemplateExport($branch),
+            'location_request_template.xlsx'
+        );
     }
 
     public function index()
@@ -303,7 +330,11 @@ class LocationController extends Controller
     private function persistLocationDocument(Request $request)
     {
         $authUser = getAuthUser();
-        $headerBranch = Branch::find($authUser->branch_id);
+        $lineBranchIds = collect($request->lines)->pluck('branch_id')->unique()->filter();
+        $headerBranch = $lineBranchIds->count() === 1
+            ? Branch::find($lineBranchIds->first())
+            : null;
+        $headerBranch = $headerBranch ?: Branch::find($authUser->branch_id);
         $headerShort = $headerBranch?->branch_short_name ?: 'XX';
 
         $preparedLines = [];
@@ -1234,12 +1265,22 @@ class LocationController extends Controller
 
     public function showAll(Request $request)
     {
-
-        // dd(getAuthUser()->branch_id);
         $authUser = getAuthUser();
         $userBranchIds = $authUser->branch_id;
         $roles = $authUser->getRoleNames();
         $isLocationApprover = $authUser->emp_id === self::LOCATION_APPROVER_EMP_ID;
+
+        $documentSearch = trim((string) $request->input('document_number', ''));
+        if ($documentSearch !== '') {
+            return $this->showAllByDocumentNumber(
+                $request,
+                $authUser,
+                $userBranchIds,
+                $roles,
+                $isLocationApprover,
+                $documentSearch
+            );
+        }
 
         if ($isLocationApprover && $request->filled('branch_id')) {
             if ($request->branch_id === 'all') {
@@ -1251,7 +1292,6 @@ class LocationController extends Controller
             $query = Location::where('branch_id', $userBranchIds);
         }
 
-        // dd($query->get());
         if ($request->filled('zone')) {
             $zone = strtoupper($request->zone);
             $query->whereRaw("(string_to_array(location_name, '_'))[2] = ?", [$zone]);
@@ -1266,7 +1306,6 @@ class LocationController extends Controller
         }
 
         if ($request->filled('level')) {
-            // Level is always the last segment (warehouse: 5 parts, sale: 6 parts)
             $query->whereRaw(
                 "(string_to_array(location_name, '_'))[array_length(string_to_array(location_name, '_'), 1)] = ?",
                 [$request->level]
@@ -1283,10 +1322,7 @@ class LocationController extends Controller
         if ($roles->contains('Sale')) {
             $query->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'S'");
         } elseif ($roles->contains('Warehouse')) {
-            if (in_array($userBranchIds, [15, 16, 17])) {
-                // dd("hello");
-                //    $query->get();
-            } else {
+            if (! in_array($userBranchIds, [15, 16, 17])) {
                 $query->where(function ($q) {
                     $q->whereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'W'")
                         ->orWhereRaw("right((string_to_array(location_name, '_'))[1], 1) = 'D'");
@@ -1298,7 +1334,6 @@ class LocationController extends Controller
             $isLocationApprover
         ) {
         } else {
-
             return response()->json([
                 'status' => 'success',
                 'data' => [],
@@ -1309,8 +1344,221 @@ class LocationController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data' => $locations
+            'data' => $locations,
         ]);
+    }
+
+    private function showAllByDocumentNumber(
+        Request $request,
+        $authUser,
+        $userBranchIds,
+        $roles,
+        bool $isLocationApprover,
+        string $documentSearch
+    ) {
+        if (
+            ! $roles->contains('Sale') &&
+            ! $roles->contains('Warehouse') &&
+            ! $roles->contains('Branch Manager') &&
+            ! $roles->contains('Operation Analystis') &&
+            ! $isLocationApprover
+        ) {
+            return response()->json([
+                'status' => 'success',
+                'document_match' => false,
+                'data' => [
+                    'data' => [],
+                    'current_page' => 1,
+                    'total' => 0,
+                    'per_page' => 20,
+                    'last_page' => 1,
+                ],
+            ]);
+        }
+
+        $docQuery = LocationRequestDocument::query()
+            ->where('document_number', 'ILIKE', '%'.$documentSearch.'%');
+
+        if (! $isLocationApprover) {
+            $docQuery->where(function ($q) use ($authUser) {
+                $q->where('user_id', $authUser->id)
+                    ->orWhereHas('lines', function ($lineQuery) use ($authUser) {
+                        $lineQuery->where('branch_id', $authUser->branch_id);
+                    });
+            });
+        }
+
+        $documents = $docQuery->orderByDesc('created_at')->get(['id', 'document_number', 'status']);
+
+        if ($documents->isEmpty()) {
+            return response()->json([
+                'status' => 'success',
+                'document_match' => false,
+                'data' => [
+                    'data' => [],
+                    'current_page' => 1,
+                    'total' => 0,
+                    'per_page' => 20,
+                    'last_page' => 1,
+                ],
+            ]);
+        }
+
+        $lineQuery = LocationRequest::query()
+            ->whereIn('document_id', $documents->pluck('id'))
+            ->orderBy('location_name');
+
+        if ($isLocationApprover && $request->filled('branch_id') && $request->branch_id !== 'all') {
+            $lineQuery->where('branch_id', $request->branch_id);
+        } elseif (! $isLocationApprover) {
+            $lineQuery->where('branch_id', $userBranchIds);
+        }
+
+        $lines = $lineQuery->get(['id', 'location_name', 'branch_id', 'status']);
+
+        $lines = $lines->filter(function ($line) use ($roles, $userBranchIds, $isLocationApprover, $request) {
+            return $this->locationNameAllowedForRoles(
+                $line->location_name,
+                $roles,
+                $userBranchIds,
+                $isLocationApprover
+            ) && $this->locationNameMatchesSegmentFilters($line->location_name, $request);
+        })->values();
+
+        if ($lines->isEmpty()) {
+            return response()->json([
+                'status' => 'success',
+                'document_match' => true,
+                'document_numbers' => $documents->pluck('document_number')->values(),
+                'data' => [
+                    'data' => [],
+                    'current_page' => 1,
+                    'total' => 0,
+                    'per_page' => 20,
+                    'last_page' => 1,
+                ],
+            ]);
+        }
+
+        $names = $lines->pluck('location_name')->unique()->values();
+
+        $locationQuery = Location::query()->whereIn('location_name', $names);
+        if ($isLocationApprover && $request->filled('branch_id') && $request->branch_id !== 'all') {
+            $locationQuery->where('branch_id', $request->branch_id);
+        } elseif (! $isLocationApprover) {
+            $locationQuery->where('branch_id', $userBranchIds);
+        }
+
+        $existing = $locationQuery->get()->keyBy('location_name');
+
+        $merged = $lines->map(function ($line) use ($existing) {
+            if ($existing->has($line->location_name)) {
+                $loc = $existing->get($line->location_name);
+
+                return [
+                    'id' => $loc->id,
+                    'location_name' => $loc->location_name,
+                    'branch_id' => $loc->branch_id,
+                    'pending' => false,
+                    'created_at' => $loc->created_at,
+                ];
+            }
+
+            return [
+                'id' => - (int) $line->id,
+                'location_name' => $line->location_name,
+                'branch_id' => $line->branch_id,
+                'pending' => true,
+                'created_at' => null,
+            ];
+        })->unique('location_name')->values();
+
+        $total = $merged->count();
+
+        return response()->json([
+            'status' => 'success',
+            'document_match' => true,
+            'document_numbers' => $documents->pluck('document_number')->values(),
+            'data' => [
+                'data' => $merged,
+                'current_page' => 1,
+                'total' => $total,
+                'per_page' => $total > 0 ? $total : 20,
+                'last_page' => 1,
+            ],
+        ]);
+    }
+
+    private function locationNameAllowedForRoles(
+        string $locationName,
+        $roles,
+        $userBranchIds,
+        bool $isLocationApprover
+    ): bool {
+        $parts = explode('_', $locationName);
+        $prefix = $parts[0] ?? '';
+        $lastChar = substr($prefix, -1);
+
+        if ($roles->contains('Sale')) {
+            return $lastChar === 'S';
+        }
+
+        if ($roles->contains('Warehouse')) {
+            if (in_array($userBranchIds, [15, 16, 17], true)) {
+                return true;
+            }
+
+            return in_array($lastChar, ['W', 'D'], true);
+        }
+
+        if (
+            $roles->contains('Branch Manager') ||
+            $roles->contains('Operation Analystis') ||
+            $isLocationApprover
+        ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function locationNameMatchesSegmentFilters(string $locationName, Request $request): bool
+    {
+        $parts = explode('_', $locationName);
+        $segmentCount = count($parts);
+
+        if ($request->filled('zone')) {
+            if (strtoupper($parts[1] ?? '') !== strtoupper($request->zone)) {
+                return false;
+            }
+        }
+
+        if ($request->filled('row')) {
+            if (($parts[2] ?? '') !== $request->row) {
+                return false;
+            }
+        }
+
+        if ($request->filled('side')) {
+            if ($segmentCount !== 6 || strtoupper($parts[3] ?? '') !== strtoupper($request->side)) {
+                return false;
+            }
+        }
+
+        if ($request->filled('bay')) {
+            $bayIndex = $segmentCount === 6 ? 4 : 3;
+            if (($parts[$bayIndex] ?? '') !== $request->bay) {
+                return false;
+            }
+        }
+
+        if ($request->filled('level')) {
+            if (($parts[$segmentCount - 1] ?? '') !== $request->level) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function destroy($id)
