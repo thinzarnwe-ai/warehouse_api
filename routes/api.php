@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\LocationController;
+use App\Http\Controllers\Api\LocationTypeController;
 use App\Http\Controllers\BayController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\LevelController;
@@ -68,6 +69,10 @@ Route::middleware(['auth:sanctum'])->group(function (){
     Route::get('stock_tracking_in',[StockTrackingController::class, 'stock_in_show']);
     Route::get('user-branch',[StockTrackingController::class, 'branch']);
     Route::get('branches',[LocationController::class, 'allBranches']);
+    Route::get('location-types',[LocationTypeController::class, 'index']);
+    Route::post('location-types',[LocationTypeController::class, 'store']);
+    Route::put('location-types/{id}',[LocationTypeController::class, 'update']);
+    Route::delete('location-types/{id}',[LocationTypeController::class, 'destroy']);
     Route::get('get-product/{pcode}/{branch}', [StockTrackingController::class, 'getPcode']);
     Route::get('product_name/{pname}', [StockTrackingController::class,'getPname']);
     Route::get('product/{pcode}/{branch}',[StockTrackingController::class,'getStockPcode']);
