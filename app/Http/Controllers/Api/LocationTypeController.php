@@ -11,6 +11,16 @@ use Illuminate\Validation\Rule;
 
 class LocationTypeController extends Controller
 {
+    private function ensureOperationAnalyst()
+    {
+        if (! getAuthUser()->hasRole('Operation Analystis')) {
+            abort(response()->json([
+                'status' => 'error',
+                'message' => 'You are not authorized to manage location types.',
+            ], 403));
+        }
+    }
+
     public function index(Request $request)
     {
         $query = LocationType::query()->orderBy('name');
@@ -27,6 +37,8 @@ class LocationTypeController extends Controller
 
     public function store(Request $request)
     {
+        $this->ensureOperationAnalyst();
+
         $validate = Validator::make($request->all(), [
             'code' => 'required|string|max:100|unique:location_types,code',
             'name' => 'required|string|max:255',
@@ -57,6 +69,8 @@ class LocationTypeController extends Controller
 
     public function update(Request $request, $id)
     {
+        $this->ensureOperationAnalyst();
+
         $type = LocationType::findOrFail($id);
 
         $validate = Validator::make($request->all(), [
@@ -94,6 +108,8 @@ class LocationTypeController extends Controller
 
     public function destroy($id)
     {
+        $this->ensureOperationAnalyst();
+
         $type = LocationType::findOrFail($id);
 
         $inUse = LocationRequest::where('location_category', $type->code)->exists();
